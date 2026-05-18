@@ -66,22 +66,19 @@ jupyter notebook HalluciGuard_NLP_A3.ipynb
 
 ```
 halluci-guard-nlp/
-├── HalluciGuard_NLP_A3.ipynb    # Main notebook (all code)
-├── README.md                     # This file
-├── requirements.txt              # Python dependencies
+├── HalluciGuard_NLP_A3.ipynb    
+├── README.md                     
+├── requirements.txt              
 ├── report/
-│   └── nlp_a3_XXXXXXXX.pdf      # Final report
+│   └── nlp_a3_XXXXXXXX.pdf      
 └── presentation/
-    └── HalluciGuard_slides.pptx  # Presentation slides
+    └── HalluciGuard_slides.pptx 
 ```
 
 ## Team
 
 | Member | Contribution |
 |--------|-------------|
-| Member A | KB construction, RAG pipeline, baselines, notebook |
-| Member B | NLI model, hallucination pipeline, distillation, report |
+| Devarsh Varma | collab construction, RAG pipeline, baselines, notebook |
+| Agharn Singh  | NLI model, hallucination pipeline, distillation, report |
 
-## Acknowledgements
-
-AI tools (Claude, ChatGPT) were used to assist with code generation, debugging, and report drafting, as permitted by the assessment guidelines.
