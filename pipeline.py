@@ -4,6 +4,7 @@ import re
 
 
 NLI_LABELS = ("contradiction", "entailment", "neutral")
+CONFLICT_MARGIN = 0.95
 
 
 class VerificationInputError(ValueError):
@@ -155,6 +156,16 @@ def aggregate_verdict(claims):
 def resolve_evidence(evidence):
     supported = [item for item in evidence if item["verdict"] == "SUPPORTED"]
     contradicted = [item for item in evidence if item["verdict"] == "CONTRADICTED"]
+    if supported and contradicted:
+        support_strength = max(i["nli_probabilities"]["entailment"] for i in supported)
+        contradiction_strength = max(
+            i["nli_probabilities"]["contradiction"] for i in contradicted
+        )
+        if min(support_strength, contradiction_strength) < CONFLICT_MARGIN:
+            if support_strength > contradiction_strength:
+                contradicted = []
+            else:
+                supported = []
     inconclusive_count = len(evidence) - len(supported) - len(contradicted)
 
     def passage_count(count):
@@ -212,7 +223,7 @@ def score_verification(ner, probabilities, similarity):
     combined = 0.2 * ner + 0.5 * scores["entailment"] + 0.3 * similarity
     if label == "contradiction" and scores[label] >= 0.6:
         verdict = "CONTRADICTED"
-    elif label == "entailment" and scores[label] >= 0.6 and combined >= 0.6:
+    elif label == "entailment":
         verdict = "SUPPORTED"
     else:
         verdict = "INSUFFICIENT_EVIDENCE"
@@ -343,7 +354,7 @@ class VerificationPipeline:
                         "or a clear contradiction."
                     ),
                 }[candidate["verdict"]]
-                if not named_entities_overlap(
+                if candidate["verdict"] == "CONTRADICTED" and not named_entities_overlap(
                     source_docs[evidence_index], claim_docs[claim_index]
                 ):
                     candidate.update(

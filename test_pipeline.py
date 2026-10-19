@@ -211,3 +211,32 @@ def test_overall_answer_discloses_any_evidence_conflict():
     assert aggregate_verdict([
         {"verdict": "CONTRADICTED"}, {"verdict": "CONFLICTING_EVIDENCE"},
     ]) == "CONFLICTING_EVIDENCE"
+
+
+def passage(verdict, entailment, contradiction):
+    return {
+        "id": verdict, "verdict": verdict, "combined_score": 0.0, "ner_score": 0.0,
+        "embedding_score": 0.0, "nli_label": "entailment",
+        "nli_probabilities": {
+            "entailment": entailment, "contradiction": contradiction,
+            "neutral": 0.0,
+        },
+    }
+
+
+def test_weak_opposition_does_not_create_a_conflict():
+    result = resolve_evidence([
+        passage("SUPPORTED", 0.99, 0.0), passage("CONTRADICTED", 0.0, 0.7),
+    ])
+    assert result["verdict"] == "SUPPORTED"
+
+
+def test_confident_opposition_is_a_conflict():
+    result = resolve_evidence([
+        passage("SUPPORTED", 0.97, 0.0), passage("CONTRADICTED", 0.0, 0.96),
+    ])
+    assert result["verdict"] == "CONFLICTING_EVIDENCE"
+
+
+def test_entailment_below_old_threshold_is_supported():
+    assert score_verification(0.0, [0.3, 0.4, 0.3], 0.2)["verdict"] == "SUPPORTED"
