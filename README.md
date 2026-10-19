@@ -155,6 +155,27 @@ HalluciGuard_v5.ipynb
 
 ---
 
+# Local API and UI (HalluciGuard 2.0 prototype)
+
+`pipeline.py` verifies an answer against user-supplied evidence passages. `api.py` serves it with a small web UI.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-api.txt
+.venv/bin/uvicorn api:app --port 8000
+```
+
+Open http://127.0.0.1:8000 for the UI, or `POST /api/v1/verify` (schema at `/docs`). `GET /health` checks the server.
+
+Tests (the model tests need the models cached locally):
+
+```bash
+HALLUCIGUARD_RUN_MODEL_TESTS=1 .venv/bin/pytest -q
+```
+
+The verifier is a prototype. On the SciFact dev split with oracle evidence it scored 49.3% accuracy (macro F1 0.442) and abstains too often.
+
+---
+
 # Key Libraries
 
 - transformers
