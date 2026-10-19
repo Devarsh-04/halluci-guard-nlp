@@ -132,7 +132,56 @@ def ablation():
             print(f"| {name} | {split} | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} |")
 
 
+FINAL = ABLATION["+ entity gate on refutes (final)"]
+
+
+def calibration():
+    edges = [0.0, 0.5, 0.7, 0.9, 0.99, 1.0001]
+    for split in ("train", "dev"):
+        committed = []
+        for c in load(split, None):
+            verdict = claim_verdict(c["rows"], FINAL)
+            if verdict == "SUPPORTED":
+                committed.append((max(r["ent"] for r in c["rows"]), c["gold"] == verdict))
+            elif verdict == "CONTRADICTED":
+                committed.append((max(r["con"] for r in c["rows"]), c["gold"] == verdict))
+        print(f"\n{split}: {len(committed)} committed SUPPORTED/CONTRADICTED verdicts")
+        print("| Confidence | Claims | Mean confidence | Accuracy |\n|---|---:|---:|---:|")
+        ece = 0.0
+        for lo, hi in zip(edges, edges[1:]):
+            b = [(p, ok) for p, ok in committed if lo <= p < hi]
+            if b:
+                conf, acc = sum(p for p, _ in b) / len(b), sum(ok for _, ok in b) / len(b)
+                ece += len(b) / len(committed) * abs(conf - acc)
+                print(f"| {lo:.2f}-{min(hi, 1):.2f} | {len(b)} | {conf:.3f} | {acc:.1%} |")
+        print(f"ECE (5 bins): {ece:.3f}")
+
+
+def latency():
+    import time
+    corpus = {d["doc_id"]: d for d in read("corpus")}
+    claims = read("claims_dev")
+    start = time.perf_counter()
+    pipe = VerificationPipeline()
+    print(f"model load: {time.perf_counter() - start:.1f}s")
+    sentences = [s for d in list(corpus.values())[:40] for s in d["abstract"]]
+    pipe.verify("q", claims[0]["claim"], [{"id": "w", "text": sentences[0]}])
+    for n in (3, 10, 20):
+        times = []
+        for i, claim in enumerate(claims[:30]):
+            evidence = [{"id": f"p{j}", "text": sentences[(i * n + j) % len(sentences)]} for j in range(n)]
+            start = time.perf_counter()
+            pipe.verify("q", claim["claim"], evidence)
+            times.append((time.perf_counter() - start) * 1000)
+        times.sort()
+        print(f"{n} passages: p50 {times[len(times) // 2]:.0f} ms, p95 {times[int(len(times) * 0.95) - 1]:.0f} ms (30 requests)")
+
+
 def main():
+    if sys.argv[1:] == ["calibration"]:
+        return calibration()
+    if sys.argv[1:] == ["latency"]:
+        return latency()
     if sys.argv[1:] == ["ablation"]:
         return ablation()
     def pipe_corpus():

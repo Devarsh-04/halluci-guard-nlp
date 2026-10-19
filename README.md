@@ -95,6 +95,32 @@ Two things this table shows:
 
 The reranker is not in this table. With oracle evidence it only reorders passages and does not change any verdict, so this setup cannot measure it.
 
+### Calibration
+
+Accuracy of committed `SUPPORTED` / `CONTRADICTED` verdicts by the NLI probability behind them (dev, 85 verdicts; `tune_scifact.py calibration`). Abstentions and conflicts are excluded.
+
+| Confidence | Claims | Mean confidence | Accuracy |
+|---|---:|---:|---:|
+| 0.00-0.50 | 2 | 0.414 | 50.0% |
+| 0.50-0.70 | 6 | 0.653 | 50.0% |
+| 0.70-0.90 | 13 | 0.850 | 61.5% |
+| 0.90-0.99 | 33 | 0.964 | 72.7% |
+| 0.99-1.00 | 31 | 0.996 | 87.1% |
+
+Expected calibration error is 0.186 on dev (0.147 on train). Higher confidence does mean higher accuracy, so the score ranks verdicts usefully, but the probabilities are overconfident: verdicts at 0.96 are right about 73% of the time. Treat scores as rankings, not probabilities. The dev bins are small (2 to 33 claims), so the figures are rough.
+
+### Latency
+
+One request, after warm-up, CPU only (Apple M3), 30 SciFact dev claims with sentence-length passages (`tune_scifact.py latency`). Model load takes about 5 s on first use.
+
+| Passages | p50 | p95 |
+|---:|---:|---:|
+| 3 | 131 ms | 158 ms |
+| 10 | 380 ms | 408 ms |
+| 20 (API maximum) | 750 ms | 791 ms |
+
+Cost grows roughly 37 ms per passage because NLI runs on every claim-passage pair. There is no LLM API call, so there is no per-request API cost.
+
 ## Failure modes
 
 | Failure mode | Evidence | Mitigation | Status |
@@ -111,7 +137,7 @@ The reranker is not in this table. With oracle evidence it only reorders passage
 - Evidence is supplied by the caller. There is no search, retrieval index or agent.
 - One benchmark, scientific text, oracle evidence.
 - Contradicted recall is 32.8% on dev.
-- No calibration, latency or cost measurements.
+- Scores are overconfident (ECE 0.186 on dev); latency was measured on one machine with short passages.
 
 ## Background: HalluciGuard v5 (coursework)
 
