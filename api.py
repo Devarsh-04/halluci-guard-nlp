@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from pipeline import VerificationInputError, VerificationPipeline
-from search import PassageIndex, verify_with_search
+from search import MAX_RETRIES, PassageIndex, verify_with_search
 
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -57,6 +57,7 @@ class SearchRequest(BaseModel):
 
     question: Annotated[Text, Field(max_length=1000)]
     answer: Annotated[Text, Field(max_length=2000)]
+    max_retries: int = Field(MAX_RETRIES, ge=0, le=2)
 
 
 class RankedEvidence(Evidence):
@@ -188,6 +189,8 @@ def verify(body: VerifyRequest):
 def verify_search(body: SearchRequest):
     index = get_index()
     try:
-        return verify_with_search(get_pipeline(), index, body.question, body.answer)
+        return verify_with_search(
+            get_pipeline(), index, body.question, body.answer, body.max_retries
+        )
     except VerificationInputError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
