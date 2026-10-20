@@ -2,7 +2,7 @@
 
 Checks whether each claim in an LLM answer is supported, contradicted, or unaddressed by evidence passages you supply, and returns a per-claim, per-passage verdict with scores.
 
-Status: local prototype. It verifies against evidence you provide; it does not search for evidence yet.
+Status: local prototype. It verifies against evidence you provide, or against passages it retrieves from a corpus you point it at.
 
 ## Problem
 
@@ -55,6 +55,38 @@ Docker (CPU, models baked into the image at build time):
 docker build -t halluciguard .
 docker run -p 8000:8000 halluciguard
 ```
+
+## Evidence search
+
+`POST /api/v1/verify-search` takes only `question` and `answer`, finds its own evidence, and verifies against it (`search.py`). It is off until you set `HALLUCIGUARD_CORPUS` to a SciFact-format `corpus.jsonl` (`doc_id`, `title`, `abstract` as a list of sentences); the Docker image does not include a corpus.
+
+```bash
+HALLUCIGUARD_CORPUS=/path/to/corpus.jsonl .venv/bin/uvicorn api:app --port 8000
+```
+
+Per claim, the loop is:
+
+1. Retrieve the 5 best two-sentence windows by MiniLM similarity and verify the claim against them.
+2. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with NLI probability of 0.9 or more, or if the evidence conflicts.
+3. Otherwise fetch the next 5 passages and verify against all passages so far, up to 2 retries (15 passages).
+
+Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The first request builds the index (about 40,000 passages for SciFact, a few minutes on CPU) and caches it next to the corpus.
+
+Open-corpus results on the SciFact dev split (300 claims; `tune_scifact.py retrieval`), against the oracle result above:
+
+| Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Seconds per claim |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Oracle rationale sentences | 55.3% | 0.513 | 33.9% | 32.8% | 5 | 17 | 3 | n/a |
+| Retrieved, 0 retries | 49.3% | 0.484 | 31.5% | 46.9% | 10 | 38 | 6 | 0.30 |
+| Retrieved, 2 retries (default) | 47.7% | 0.478 | 38.7% | 51.6% | 13 | 60 | 7 | 1.17 |
+
+The gold document is among the top 5 passages for 85.1% of the 188 labeled dev claims, the top 10 for 91.5% and the top 15 for 95.2%.
+
+What this shows:
+
+- Retrieval is not the bottleneck. Finding the right document works; the drop from oracle evidence comes from verifying against whole retrieved windows instead of annotated rationales, which adds off-point passages that NLI sometimes reads as contradictions (false refutes 17 to 38).
+- Retries raise recall (supported 31.5% to 38.7%) but add false refutes (38 to 60), because each extra passage is another chance for a spurious contradiction. Overall accuracy goes down slightly. On this benchmark the retry loop does not pay for itself; the default is kept at 2 so the behaviour is visible, and `max_retries=0` is the better setting if accuracy matters more than recall.
+- Claims with no gold evidence still receive retrieved passages, so abstaining correctly is harder than in the oracle setting.
 
 ## Evaluation: SciFact
 
@@ -128,13 +160,14 @@ Cost grows roughly 37 ms per passage because NLI runs on every claim-passage pai
 | Too many abstentions: correct entailments labelled insufficient | First prototype labelled 88 of 124 supported dev claims insufficient | Removed the combined-score gate and the entity gate on supports | Supported recall 18.5% to 33.9%; still low |
 | False conflicts: one weak opposing passage forces a conflict | 5 false conflicts on dev, 11 on train, for claims with a single gold label | Conflict needs both sides at 0.95 or more | Down to 3 on dev; no gold conflicts exist to measure sensitivity |
 | Wrongly refuting a true claim | 77 train false refutes with raw NLI | Named-entity overlap required for `CONTRADICTED` | Halves false refutes; costs contradicted recall |
-| Topically similar but non-entailing evidence | Not measured | Per-passage NLI after ranking, so similarity alone never yields `SUPPORTED` | Untested; needs a retrieval benchmark |
+| Agent keeps searching without converging | Mean 2.21 rounds per claim at the 2-retry default | Retry budget of 2 and a 0.9 confidence stop | Bounded, but extra rounds added false refutes |
+| Topically similar but non-entailing evidence | Retrieval finds the right document 85% of the time (top 5), yet open-corpus false refutes are 38 against 17 with oracle evidence | Per-passage NLI after ranking, so similarity alone never yields `SUPPORTED` | Partly mitigated: it still produces extra false refutes when retrieved windows are off-point |
 | Passage too long for the NLI model | Inputs over 512 tokens | Request is rejected with a clear error | Caller must shorten passages |
 | Aliases and paraphrased entities | Entity check matches names, not aliases | None | Open |
 
 ## Limitations
 
-- Evidence is supplied by the caller. There is no search, retrieval index or agent.
+- Search works over a local SciFact-format corpus only. There is no web search, no LLM and no query rewriting, so the retry loop is a deeper look in one ranking and not reasoning.
 - One benchmark, scientific text, oracle evidence.
 - Contradicted recall is 32.8% on dev.
 - Scores are overconfident (ECE 0.186 on dev); latency was measured on one machine with short passages.
