@@ -22,3 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t halluciguard .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name hg -p 8000:8000 halluciguard
+          until curl -sf localhost:8000/health; do sleep 2; done
+          curl -sf -X POST localhost:8000/api/v1/verify -H 'content-type: application/json' \
+            -d '{"question":"q","answer":"Mars has two moons.","evidence":[{"id":"m","text":"Mars has two moons, Phobos and Deimos."}]}' \
+            | grep -q '"verdict":"SUPPORTED"'
+          docker exec hg id -u | grep -qv '^0$'

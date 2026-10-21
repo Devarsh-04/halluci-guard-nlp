@@ -166,3 +166,28 @@ def test_shared_subject_and_ambiguous_scope_through_the_api(answer, count, revie
     if count == 2:
         assert result["claims"][1]["text"] == "Mars has two moons."
         assert result["verdict"] == "SUPPORTED", result
+
+
+def test_concurrent_requests_match_sequential_results():
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    from api import get_pipeline
+
+    pipeline = get_pipeline()
+    cases = [
+        ("Mars?", "Mars has two moons.",
+         ["Mars has two moons, Phobos and Deimos.", "Mars has no moons.", "Venus is hot."]),
+        ("Jupiter?", "Jupiter is the largest planet and Saturn has rings.",
+         ["Jupiter is the largest planet.", "Saturn has prominent rings.", "Venus is hot."]),
+    ]
+
+    def run(i):
+        question, answer, texts = cases[i % len(cases)]
+        evidence = [{"id": f"e{j}", "text": text, "source": "s"} for j, text in enumerate(texts)]
+        return json.dumps(pipeline.verify(question, answer, evidence), sort_keys=True)
+
+    sequential = [run(i) for i in range(len(cases))]
+    with ThreadPoolExecutor(8) as pool:
+        concurrent = list(pool.map(run, range(32)))
+    assert all(result == sequential[i % len(cases)] for i, result in enumerate(concurrent))
