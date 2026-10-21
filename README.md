@@ -74,7 +74,7 @@ Per claim, the loop is:
 1. Take the 15 closest two-sentence windows by MiniLM similarity, rerank them with the cross-encoder, and run NLI on each.
 2. In this retrieved-evidence mode the verdict rules are stricter than for evidence you supply, because retrieved passages are often only loosely related. A contradiction needs NLI probability of 0.95 or more, similarity to the claim of 0.6 or more and a cross-encoder relevance score of 4 or more; a support needs a relevance score of -2 or more. The most relevant passage with a committed verdict decides, and `CONFLICTING_EVIDENCE` needs that passage and a relevant opposing passage to both reach 0.99.
 3. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with raw NLI probability of 0.9 or more, or if the evidence conflicts.
-4. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 15 passages and is verified against all passages so far. I did not re-measure retries after changing the rules above, so treat them as untested.
+4. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 15 passages and is verified against all passages so far. Measured under these rules they do not help (see the table), so leave them off.
 
 Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The index (about 40,000 passages for SciFact) is built at server startup, which takes a few minutes on CPU the first time, and is cached next to the corpus so later starts are fast.
 
@@ -86,7 +86,8 @@ Open-corpus results on the SciFact dev split (300 claims; `python -m experiments
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Oracle rationale sentences | 64.3% | 0.635 | 41.1% | 56.2% | 4 | 12 | 3 | n/a |
 | Retrieved, rules for supplied evidence (first version) | 55.3% | 0.558 | 37.9% | 67.2% | 6 | 52 | 11 | 0.65 |
-| Retrieved, relevance-gated rules (**current**) | 60.0% | 0.567 | 46.8% | 34.4% | 13 | 12 | 3 | 2.13 |
+| Retrieved, relevance-gated rules, 0 retries (**current default**) | 60.0% | 0.567 | 46.8% | 34.4% | 13 | 12 | 3 | 2.13 |
+| Retrieved, relevance-gated rules, 2 retries | 59.3% | 0.562 | 48.4% | 34.4% | 18 | 13 | 3 | 7.27 |
 
 The gold document is among the top 5 passages for 85.1% of the 188 labeled dev claims, the top 10 for 91.5% and the top 15 for 95.2%.
 
@@ -96,6 +97,7 @@ What this shows:
 - The price is contradicted recall, which fell from 67.2% to 34.4%. Macro F1 barely moved (0.558 to 0.567); accuracy rose 4.7 points, mostly from fewer false refutes. This is a precision-first setting and it is not a free win.
 - Supported recall rose (37.9% to 46.8%) and false supports rose from 6 to 13.
 - It is about 3x slower per claim (2.1 s against 0.65 s) because 15 passages are scored instead of 5. A lower-latency variant that scores fewer passages was not tested end to end.
+- Retries do not pay for themselves: with 2 retries the loop averaged 2.32 rounds per claim and took 7.3 s per claim, for slightly lower accuracy (59.3% against 60.0%), no change in contradicted recall and more false supports (18 against 13). Supported recall rose by 1.6 points.
 - Claims with no gold evidence still receive retrieved passages, so abstaining correctly is harder than in the oracle setting.
 
 ## Evaluation: SciFact
@@ -222,7 +224,7 @@ Treat all of this as a smoke test. The pairs are synthetic, written by the v5 au
 | Too many abstentions: correct entailments labelled insufficient | First prototype labelled 88 of 124 supported dev claims insufficient | Removed the combined-score gate and the gate on supports | Supported recall 18.5% to 41.1%; still low |
 | False conflicts: one weak opposing passage forces a conflict | 5 false conflicts on dev, 11 on train, for claims with a single gold label | Conflict needs both sides at 0.95 or more | 3 on dev with oracle evidence, 11 with retrieved evidence; the hand-written conflict set is 10/10 |
 | Wrongly refuting a true claim | 53 train false refutes with raw NLI; 132 train false refutes in search mode | A contradiction needs similarity of 0.5 or more (0.6, NLI 0.95 and a relevance score of 4 in search mode) | Train false refutes 30 (supplied evidence) and 19 (search); costs contradicted recall |
-| Agent keeps searching without converging | Retry loop is bounded at 2 retries | Retry budget (default 0, maximum 2) and a 0.9 confidence stop | Retries are off by default and were not re-measured after the search rules changed |
+| Agent keeps searching without converging | Mean 2.32 rounds per claim with 2 retries, 7.3 s per claim | Retry budget (default 0, maximum 2) and a 0.9 confidence stop | Bounded, but retries gave no accuracy gain (59.3% against 60.0%) and added false supports, so they are off by default |
 | Topically similar but non-entailing evidence | Retrieval finds the right document 85% of the time (top 5); with the first rules, open-corpus false refutes were 52 against 12 with oracle evidence | Cross-encoder relevance gate and top-passage voting in search mode | Mitigated: false refutes 12 on dev, at the cost of contradicted recall (34.4%) |
 | Passage too long for the NLI model | Inputs over 512 tokens | Request is rejected with a clear error | Caller must shorten passages |
 | Entity swapped into the claim | Earlier entity gate dropped 3 of 10 conflict-set contradictions | Replaced by the similarity gate | Fixed on the conflict set |
@@ -242,7 +244,6 @@ Treat all of this as a smoke test. The pairs are synthetic, written by the v5 au
 - A real, dated visa corpus from authoritative sources and an expert-labelled evaluation set, before any claim about that domain. This is the biggest gap and needs people and data, not code.
 - A larger, harder conflict set with topically close passages, since the current 40 items use unrelated distractors.
 - Recover contradicted recall in search mode without bringing the false refutes back, and cut its latency.
-- Re-measure retries under the new search rules.
 - Move the verdict thresholds onto the calibrated probabilities.
 - Fine-tune the NLI model on in-domain data.
 
