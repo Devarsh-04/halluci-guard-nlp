@@ -9,23 +9,25 @@ PAGE_SIZE = 5
 MAX_RETRIES = 0
 CONFIDENT = 0.9
 MAX_WINDOW_CHARS = 1200
+RERANK_POOL = 30
 NLI_LABEL = {"SUPPORTED": "entailment", "CONTRADICTED": "contradiction"}
 
 
 class PassageIndex:
-    def __init__(self, passages, embeddings, encoder):
+    def __init__(self, passages, embeddings, encoder, reranker=None):
         self.passages = passages
         self.embeddings = embeddings
         self.encoder = encoder
+        self.reranker = reranker
 
     @classmethod
-    def build(cls, corpus_path, encoder, cache=None):
+    def build(cls, corpus_path, encoder, cache=None, reranker=None):
         """Index two-sentence windows of a SciFact-format corpus (JSONL with
         doc_id, title, abstract as a list of sentences)."""
         cache = Path(cache) if cache else None
         if cache and cache.with_suffix(".json").exists():
             passages = json.loads(cache.with_suffix(".json").read_text())
-            return cls(passages, np.load(cache.with_suffix(".npy")), encoder)
+            return cls(passages, np.load(cache.with_suffix(".npy")), encoder, reranker)
         passages = []
         with open(corpus_path) as f:
             for line in f:
@@ -45,12 +47,17 @@ class PassageIndex:
         if cache:
             cache.with_suffix(".json").write_text(json.dumps(passages))
             np.save(cache.with_suffix(".npy"), embeddings)
-        return cls(passages, embeddings, encoder)
+        return cls(passages, embeddings, encoder, reranker)
 
     def search(self, query, start, count):
         vector = self.encoder.encode(query, normalize_embeddings=True)
-        order = np.argsort(-(self.embeddings @ vector))[start:start + count]
-        return [dict(self.passages[i]) for i in order]
+        order = np.argsort(-(self.embeddings @ vector))
+        if self.reranker is None:
+            return [dict(self.passages[i]) for i in order[start:start + count]]
+        pool = [dict(self.passages[i]) for i in order[:RERANK_POOL]]
+        scores = self.reranker.predict([(query, p["text"]) for p in pool])
+        ranked = [p for _, p in sorted(zip(scores, pool), key=lambda pair: -pair[0])]
+        return ranked[start:start + count]
 
 
 def confidence(claim):

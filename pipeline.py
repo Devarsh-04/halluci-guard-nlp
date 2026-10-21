@@ -1,11 +1,13 @@
 """Inference extracted from v5 research notebook cells 25 and 37."""
 
+import math
 import re
 
 
 NLI_LABELS = ("contradiction", "entailment", "neutral")
 CONFLICT_MARGIN = 0.95
 MIN_CONTRADICTION_SIMILARITY = 0.5
+CONFIDENCE_TEMPERATURE = 2.4
 
 
 class VerificationInputError(ValueError):
@@ -154,6 +156,13 @@ def aggregate_verdict(claims):
     return "SUPPORTED"
 
 
+def calibrated(probabilities, label, temperature=CONFIDENCE_TEMPERATURE):
+    logits = {name: math.log(max(value, 1e-9)) / temperature
+              for name, value in probabilities.items()}
+    top = max(logits.values())
+    return math.exp(logits[label] - top) / sum(math.exp(x - top) for x in logits.values())
+
+
 def resolve_evidence(evidence):
     supported = [item for item in evidence if item["verdict"] == "SUPPORTED"]
     contradicted = [item for item in evidence if item["verdict"] == "CONTRADICTED"]
@@ -208,12 +217,17 @@ def resolve_evidence(evidence):
             f"claim; {inconclusive_summary}."
         )
     representative = (supported or contradicted or evidence)[0]
+    confidence = None
+    if verdict == "SUPPORTED":
+        confidence = max(calibrated(i["nli_probabilities"], "entailment") for i in supported)
+    elif verdict == "CONTRADICTED":
+        confidence = max(calibrated(i["nli_probabilities"], "contradiction") for i in contradicted)
     return {
         **{key: representative[key] for key in (
             "combined_score", "ner_score", "embedding_score",
             "nli_label", "nli_probabilities",
         )},
-        "verdict": verdict, "explanation": explanation,
+        "verdict": verdict, "explanation": explanation, "confidence": confidence,
         "verified_evidence_id": representative["id"],
     }
 
@@ -251,7 +265,7 @@ def entity_number_score(source_doc, answer_doc):
 
 
 class VerificationPipeline:
-    def __init__(self):
+    def __init__(self, nli_model="cross-encoder/nli-deberta-v3-small"):
         import spacy
         import torch
         from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -263,10 +277,9 @@ class VerificationPipeline:
         self.reranker = CrossEncoder(
             "cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu"
         )
-        model_name = "cross-encoder/nli-deberta-v3-small"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(nli_model)
         self.nli_model = AutoModelForSequenceClassification.from_pretrained(
-            model_name
+            nli_model
         ).eval()
         self.label_indices = [
             next(i for i, name in self.nli_model.config.id2label.items()

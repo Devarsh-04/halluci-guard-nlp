@@ -106,6 +106,14 @@ class ClaimResult(VerificationScores):
             "all supplied passages are assessed."
         )
     )
+    confidence: float | None = Field(
+        None,
+        description=(
+            "Calibrated probability behind a SUPPORTED or CONTRADICTED verdict "
+            "(temperature-scaled NLI probability, fitted on SciFact; null otherwise). "
+            "Calibration on other domains is unverified."
+        ),
+    )
     search: SearchTrace | None = None
 
 
@@ -168,11 +176,11 @@ def get_index():
             status_code=503,
             detail="Evidence search is off: set HALLUCIGUARD_CORPUS to a SciFact-format corpus.jsonl.",
         )
-    encoder = get_pipeline().encoder
+    pipeline = get_pipeline()
     with _load_lock:
         if _index is None:
             _index = PassageIndex.build(
-                corpus, encoder,
+                corpus, pipeline.encoder, reranker=pipeline.reranker,
                 cache=Path(corpus).parent / "passage_index",
             )
     return _index

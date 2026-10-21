@@ -8,9 +8,11 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline import VerificationPipeline, entity_number_score
+from pipeline import CONFIDENCE_TEMPERATURE, VerificationPipeline, calibrated, entity_number_score
 
 DATA = Path(os.environ.get("SCIFACT_DIR", "scifact_data"))
+NLI_MODEL = os.environ.get("NLI_MODEL", "cross-encoder/nli-deberta-v3-small")
+FEATURES = "" if NLI_MODEL.endswith("small") else "_" + NLI_MODEL.split("/")[-1]
 GOLD = {"SUPPORT": "SUPPORTED", "CONTRADICT": "CONTRADICTED"}
 LABELS = ["SUPPORTED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE"]
 
@@ -124,7 +126,7 @@ def metrics(pairs):
 
 
 def load(split, pipe_corpus):
-    path = DATA / f"features_{split}.json"
+    path = DATA / f"features_{split}{FEATURES}.json"
     if not path.exists():
         pipe, corpus = pipe_corpus()
         path.write_text(json.dumps(extract(split, pipe, corpus)))
@@ -143,7 +145,7 @@ ABLATION = {
 
 
 def ablation():
-    pipe_corpus = lambda: (VerificationPipeline(), {d["doc_id"]: d for d in read("corpus")})
+    pipe_corpus = lambda: (VerificationPipeline(NLI_MODEL), {d["doc_id"]: d for d in read("corpus")})
     splits = {name: load(name, pipe_corpus) for name in ("train", "dev")}
     print("| Configuration | Split | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts |")
     for name, p in ABLATION.items():
@@ -157,24 +159,28 @@ FINAL = ABLATION["+ similarity >= 0.5 instead of entity gate (current)"]
 
 def calibration():
     edges = [0.0, 0.5, 0.7, 0.9, 0.99, 1.0001]
+    label = {"SUPPORTED": ("ent", "entailment"), "CONTRADICTED": ("con", "contradiction")}
     for split in ("train", "dev"):
-        committed = []
-        for c in load(split, None):
-            verdict = claim_verdict(c["rows"], FINAL)
-            if verdict == "SUPPORTED":
-                committed.append((max(r["ent"] for r in c["rows"]), c["gold"] == verdict))
-            elif verdict == "CONTRADICTED":
-                committed.append((max(r["con"] for r in c["rows"]), c["gold"] == verdict))
-        print(f"\n{split}: {len(committed)} committed SUPPORTED/CONTRADICTED verdicts")
-        print("| Confidence | Claims | Mean confidence | Accuracy |\n|---|---:|---:|---:|")
-        ece = 0.0
-        for lo, hi in zip(edges, edges[1:]):
-            b = [(p, ok) for p, ok in committed if lo <= p < hi]
-            if b:
-                conf, acc = sum(p for p, _ in b) / len(b), sum(ok for _, ok in b) / len(b)
-                ece += len(b) / len(committed) * abs(conf - acc)
-                print(f"| {lo:.2f}-{min(hi, 1):.2f} | {len(b)} | {conf:.3f} | {acc:.1%} |")
-        print(f"ECE (5 bins): {ece:.3f}")
+        for temperature in (1.0, CONFIDENCE_TEMPERATURE):
+            committed = []
+            for c in load(split, None):
+                verdict = claim_verdict(c["rows"], FINAL)
+                if verdict in label:
+                    key, name = label[verdict]
+                    committed.append((max(calibrated(
+                        {"entailment": r["ent"], "contradiction": r["con"],
+                         "neutral": max(1 - r["ent"] - r["con"], 0.0)}, name, temperature)
+                        for r in c["rows"]), c["gold"] == verdict))
+            print(f"\n{split}, temperature {temperature}: {len(committed)} committed SUPPORTED/CONTRADICTED verdicts")
+            print("| Confidence | Claims | Mean confidence | Accuracy |\n|---|---:|---:|---:|")
+            ece = 0.0
+            for lo, hi in zip(edges, edges[1:]):
+                b = [(p, ok) for p, ok in committed if lo <= p < hi]
+                if b:
+                    conf, acc = sum(p for p, _ in b) / len(b), sum(ok for _, ok in b) / len(b)
+                    ece += len(b) / len(committed) * abs(conf - acc)
+                    print(f"| {lo:.2f}-{min(hi, 1):.2f} | {len(b)} | {conf:.3f} | {acc:.1%} |")
+            print(f"ECE (5 bins): {ece:.3f}")
 
 
 def latency():
@@ -182,7 +188,7 @@ def latency():
     corpus = {d["doc_id"]: d for d in read("corpus")}
     claims = read("claims_dev")
     start = time.perf_counter()
-    pipe = VerificationPipeline()
+    pipe = VerificationPipeline(NLI_MODEL)
     print(f"model load: {time.perf_counter() - start:.1f}s")
     sentences = [s for d in list(corpus.values())[:40] for s in d["abstract"]]
     pipe.verify("q", claims[0]["claim"], [{"id": "w", "text": sentences[0]}])
@@ -201,7 +207,7 @@ def open_retrieval():
     import time
     from search import PassageIndex, verify_with_search
 
-    pipe = VerificationPipeline()
+    pipe = VerificationPipeline(NLI_MODEL)
     index = PassageIndex.build(DATA / "corpus.jsonl", pipe.encoder, cache=DATA / "passage_index")
     claims = read("claims_dev")
     print(f"{len(index.passages)} indexed passages")
@@ -213,7 +219,8 @@ def open_retrieval():
         )
         print(f"gold document in top {k} passages: {hits / len(labeled):.1%} of {len(labeled)} labeled claims")
     print("| Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Mean rounds | Seconds/claim |")
-    for retries in (0, 2):
+    for reranked, retries in ((False, 0), (True, 0), (True, 2)):
+        index.reranker = pipe.reranker if reranked else None
         pairs, rounds, start = [], [], time.perf_counter()
         for c in claims:
             gold = GOLD[next(iter(c["evidence"].values()))[0]["label"]] if c["evidence"] else "INSUFFICIENT_EVIDENCE"
@@ -221,7 +228,7 @@ def open_retrieval():
             pairs.append((gold, result["verdict"]))
             rounds.append(sum(x["search"]["rounds"] for x in result["claims"]) / len(result["claims"]))
         s = metrics(pairs)
-        print(f"| Retrieved, {retries} retries | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} | {sum(rounds) / len(rounds):.2f} | {(time.perf_counter() - start) / len(claims):.2f} |", flush=True)
+        print(f"| Retrieved{', reranked' if reranked else ''}, {retries} retries | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} | {sum(rounds) / len(rounds):.2f} | {(time.perf_counter() - start) / len(claims):.2f} |", flush=True)
 
 
 def main():
@@ -234,7 +241,7 @@ def main():
     if sys.argv[1:] == ["ablation"]:
         return ablation()
     def pipe_corpus():
-        return VerificationPipeline(), {d["doc_id"]: d for d in read("corpus")}
+        return VerificationPipeline(NLI_MODEL), {d["doc_id"]: d for d in read("corpus")}
 
     train = load("train", pipe_corpus)
     current = dict(gate_sup=True, gate_con=True, ent=0.6, comb=0.6, con=0.6, margin=0.0)
