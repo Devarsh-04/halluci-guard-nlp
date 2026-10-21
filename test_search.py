@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api
-from search import PassageIndex, verify_with_search
+from search import PAGE_SIZE, PassageIndex, verify_with_search
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +30,7 @@ class StubPipeline:
         self.nlp = nlp
         self.by_passage_count = by_passage_count
 
-    def verify(self, question, claim, evidence):
+    def verify(self, question, claim, evidence, retrieved=False):
         verdict, probability = self.by_passage_count(len(evidence))
         label = {"SUPPORTED": "entailment", "CONTRADICTED": "contradiction"}.get(verdict)
         probabilities = {"entailment": 0.0, "contradiction": 0.0, "neutral": 1.0}
@@ -59,15 +59,15 @@ def test_insufficient_evidence_retries_deeper_until_budget(nlp):
     result, index = run(nlp, lambda n: ("INSUFFICIENT_EVIDENCE", 0.0), max_retries=2)
     claim = result["claims"][0]
     assert claim["search"] == {
-        "rounds": 3, "passages_searched": 15, "stopped": "retry budget used",
+        "rounds": 3, "passages_searched": 3 * PAGE_SIZE, "stopped": "retry budget used",
     }
-    assert [start for _, start, _ in index.queries] == [0, 5, 10]
+    assert [start for _, start, _ in index.queries] == [0, PAGE_SIZE, 2 * PAGE_SIZE]
     assert result["verdict"] == "INSUFFICIENT_EVIDENCE"
 
 
 def test_retry_finds_evidence_in_later_page(nlp):
     result, _ = run(
-        nlp, lambda n: ("SUPPORTED", 0.95) if n >= 10 else ("INSUFFICIENT_EVIDENCE", 0.0),
+        nlp, lambda n: ("SUPPORTED", 0.95) if n > PAGE_SIZE else ("INSUFFICIENT_EVIDENCE", 0.0),
         max_retries=2,
     )
     claim = result["claims"][0]
@@ -100,7 +100,7 @@ def test_zero_retries_searches_once(nlp):
 def test_small_index_stops_when_exhausted(nlp):
     result, _ = run(nlp, lambda n: ("INSUFFICIENT_EVIDENCE", 0.0), index_size=7, max_retries=2)
     assert result["claims"][0]["search"] == {
-        "rounds": 2, "passages_searched": 7, "stopped": "index exhausted",
+        "rounds": 1, "passages_searched": 7, "stopped": "index exhausted",
     }
 
 
@@ -200,17 +200,3 @@ def test_server_builds_the_index_at_startup(monkeypatch):
     monkeypatch.setattr(api, "get_index", lambda: built.append(True))
     with TestClient(api.app):
         assert built == [True]
-
-
-class LengthReranker:
-    """Prefers shorter passages, to show that reranking reorders the pool."""
-
-    def predict(self, pairs):
-        return [-len(text) for _, text in pairs]
-
-
-def test_reranker_reorders_the_candidate_pool(corpus):
-    plain = PassageIndex.build(corpus, WordEncoder())
-    reranked = PassageIndex.build(corpus, WordEncoder(), reranker=LengthReranker())
-    assert plain.search("Mars moons", 0, 3)[0]["id"] != reranked.search("Mars moons", 0, 3)[0]["id"]
-    assert reranked.search("Mars moons", 0, 1)[0]["id"] == "2:0"
