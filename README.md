@@ -177,6 +177,14 @@ Cost grows roughly 37 ms per passage because NLI runs on every claim-passage pai
 - Contradicted recall is 32.8% on dev.
 - Scores are overconfident (ECE 0.186 on dev); latency was measured on one machine with short passages.
 
+## Next steps
+
+- A labelled conflict set (a few dozen claims with both supporting and refuting passages), since SciFact cannot measure conflict detection.
+- Raise contradicted recall (32.8% on dev) without bringing back false refutations, for example with a larger NLI model or fine-tuning.
+- Temperature scaling, so scores can be used as probabilities (ECE is 0.186 on dev).
+- A retrieval benchmark that can measure the reranker, which oracle evidence cannot.
+- A domain corpus with dates and sources (for example the visa material from v5) and a labelled evaluation set for it, before any claim about that domain.
+
 ## Background: HalluciGuard v5 (coursework)
 
 The repository began as an NLP assessment at the University of Technology Sydney: a retrieval-augmented pipeline for Australian visa questions (SBERT + FAISS retrieval, cross-encoder reranking, Flan-T5-base generation, NLI/NER/embedding verification) evaluated on 120 curated passages and 120 synthetic hallucination pairs. Its notebooks are `HalluciGuard_v5_RESEARCH_FINAL.ipynb` and related files. The reported v5 weighted F1 of 1.00 for NLI and for the full pipeline was measured on that small synthetic set and should not be read as general performance.
