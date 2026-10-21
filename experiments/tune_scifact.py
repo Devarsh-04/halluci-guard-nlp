@@ -1,18 +1,33 @@
 import itertools
 import json
 import os
+import re
 import sys
 from collections import Counter
 from pathlib import Path
 
 import numpy as np
 
-from pipeline import (VerificationPipeline, entity_number_score,
-                      named_entities_overlap)
+from pipeline import VerificationPipeline, entity_number_score
 
 DATA = Path(os.environ.get("SCIFACT_DIR", "scifact_data"))
 GOLD = {"SUPPORT": "SUPPORTED", "CONTRADICT": "CONTRADICTED"}
 LABELS = ["SUPPORTED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE"]
+
+
+def named_entities_overlap(source_doc, claim_doc):
+    numeric_labels = {
+        "CARDINAL", "ORDINAL", "QUANTITY", "MONEY", "DATE", "TIME", "PERCENT",
+    }
+
+    def names(doc):
+        entities = {re.sub(r"^\W+|\W+$", "", entity.text.lower()) for entity in doc.ents
+                    if entity.label_ not in numeric_labels}
+        entities.discard("")
+        return entities or {token.lower_ for token in doc if token.pos_ == "PROPN"}
+
+    claim_names = names(claim_doc)
+    return not claim_names or bool(claim_names & names(source_doc))
 
 
 def read(name):
@@ -65,7 +80,7 @@ def extract(split, pipe, corpus):
 
 def passage_verdict(r, p):
     if (r["con"] >= p["con"] and r["con"] > max(r["ent"], 1 - r["con"] - r["ent"])
-            and (r["overlap"] or not p["gate_con"])):
+            and (r["overlap"] or not p["gate_con"]) and r["sim"] >= p.get("sim_con", 0.0)):
         return "CONTRADICTED"
     combined = 0.2 * r["ner"] + 0.5 * r["ent"] + 0.3 * r["sim"]
     if (r["ent"] >= p["ent"] and r["ent"] > max(r["con"], 1 - r["con"] - r["ent"])
@@ -120,7 +135,8 @@ ABLATION = {
     "NLI argmax only": dict(gate_sup=False, gate_con=False, ent=0.0, comb=0.0, con=0.0, margin=0.0),
     "+ conflict margin 0.95": dict(gate_sup=False, gate_con=False, ent=0.0, comb=0.0, con=0.0, margin=0.95),
     "+ contradiction >= 0.6": dict(gate_sup=False, gate_con=False, ent=0.0, comb=0.0, con=0.6, margin=0.95),
-    "+ entity gate on refutes (final)": dict(gate_sup=False, gate_con=True, ent=0.0, comb=0.0, con=0.6, margin=0.95),
+    "+ entity gate on refutes": dict(gate_sup=False, gate_con=True, ent=0.0, comb=0.0, con=0.6, margin=0.95),
+    "+ similarity >= 0.5 instead of entity gate (current)": dict(gate_sup=False, gate_con=False, sim_con=0.5, ent=0.0, comb=0.0, con=0.6, margin=0.95),
     "+ entity gate on supports": dict(gate_sup=True, gate_con=True, ent=0.0, comb=0.0, con=0.6, margin=0.95),
     "+ entailment >= 0.6 and combined >= 0.6 (previous)": dict(gate_sup=True, gate_con=True, ent=0.6, comb=0.6, con=0.6, margin=0.0),
 }
@@ -136,7 +152,7 @@ def ablation():
             print(f"| {name} | {split} | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} |")
 
 
-FINAL = ABLATION["+ entity gate on refutes (final)"]
+FINAL = ABLATION["+ similarity >= 0.5 instead of entity gate (current)"]
 
 
 def calibration():

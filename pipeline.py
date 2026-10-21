@@ -5,6 +5,7 @@ import re
 
 NLI_LABELS = ("contradiction", "entailment", "neutral")
 CONFLICT_MARGIN = 0.95
+MIN_CONTRADICTION_SIMILARITY = 0.5
 
 
 class VerificationInputError(ValueError):
@@ -249,21 +250,6 @@ def entity_number_score(source_doc, answer_doc):
     return max(0.0, 1.0 - unsupported / total) if total else 1.0
 
 
-def named_entities_overlap(source_doc, claim_doc):
-    numeric_labels = {
-        "CARDINAL", "ORDINAL", "QUANTITY", "MONEY", "DATE", "TIME", "PERCENT",
-    }
-
-    def names(doc):
-        entities = {re.sub(r"^\W+|\W+$", "", entity.text.lower()) for entity in doc.ents
-                    if entity.label_ not in numeric_labels}
-        entities.discard("")
-        return entities or {token.lower_ for token in doc if token.pos_ == "PROPN"}
-
-    claim_names = names(claim_doc)
-    return not claim_names or bool(claim_names & names(source_doc))
-
-
 class VerificationPipeline:
     def __init__(self):
         import spacy
@@ -354,14 +340,13 @@ class VerificationPipeline:
                         "or a clear contradiction."
                     ),
                 }[candidate["verdict"]]
-                if candidate["verdict"] == "CONTRADICTED" and not named_entities_overlap(
-                    source_docs[evidence_index], claim_docs[claim_index]
-                ):
+                if (candidate["verdict"] == "CONTRADICTED"
+                        and similarity < MIN_CONTRADICTION_SIMILARITY):
                     candidate.update(
                         verdict="INSUFFICIENT_EVIDENCE",
                         explanation=(
-                            "No named-entity match was found, so this passage "
-                            "is inconclusive for this claim. Aliases are not resolved."
+                            "This passage is not similar enough to the claim to "
+                            "count as a contradiction."
                         ),
                     )
             claim.update(**resolve_evidence(candidates), evidence=candidates)
