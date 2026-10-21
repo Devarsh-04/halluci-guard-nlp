@@ -175,7 +175,7 @@ def test_index_builds_two_sentence_windows(corpus):
     index = PassageIndex.build(corpus, WordEncoder())
     assert [p["id"] for p in index.passages] == ["1:0", "1:1", "2:0"]
     assert index.passages[0]["text"] == "Mars has two moons. They are Phobos and Deimos."
-    assert index.passages[2]["source"] == "Jupiter (2)"
+    assert index.passages[2]["source"] == "Jupiter (2, part 1)"
 
 
 def test_index_search_ranks_and_pages(corpus):

@@ -36,7 +36,7 @@ class PassageIndex:
                     if len(text) <= MAX_WINDOW_CHARS:
                         passages.append({
                             "id": f"{doc['doc_id']}:{i}", "text": text,
-                            "source": f"{doc['title']} ({doc['doc_id']})",
+                            "source": f"{doc['title']} ({doc['doc_id']}, part {i + 1})",
                         })
         embeddings = encoder.encode(
             [p["text"] for p in passages], batch_size=128,
