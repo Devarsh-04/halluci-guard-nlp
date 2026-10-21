@@ -47,7 +47,14 @@ Open http://127.0.0.1:8000 for the UI, or `POST /api/v1/verify` (schema at `/doc
 HALLUCIGUARD_RUN_MODEL_TESTS=1 .venv/bin/pytest -q
 ```
 
-The model tests need the models cached locally.
+The model tests need the models cached locally. Without them, a plain `pytest -q` skips those 12 tests, which is what CI runs.
+
+Docker (CPU, models baked into the image at build time):
+
+```bash
+docker build -t halluciguard .
+docker run -p 8000:8000 halluciguard
+```
 
 ## Evaluation: SciFact
 
