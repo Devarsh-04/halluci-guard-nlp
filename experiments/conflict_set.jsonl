@@ -1,0 +1,40 @@
+{"gold": "CONFLICTING_EVIDENCE", "claim": "Paris is the capital of France.", "passages": ["Paris is the capital and largest city of France.", "Paris is not the capital of France; Lyon is."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "Water boils at 100 degrees Celsius at sea level.", "passages": ["At sea level, water boils at 100 degrees Celsius.", "At sea level, water boils at 90 degrees Celsius."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "The Pacific Ocean is the largest ocean.", "passages": ["The Pacific Ocean is the largest ocean on Earth.", "The Pacific Ocean is smaller than the Atlantic Ocean."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "Albert Einstein developed the theory of relativity.", "passages": ["Albert Einstein developed the theory of relativity.", "Albert Einstein did not develop the theory of relativity; Isaac Newton did."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "The Moon orbits the Earth.", "passages": ["The Moon orbits the Earth about once every 27 days.", "The Moon does not orbit the Earth; it orbits the Sun alone."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "Alexander Fleming discovered penicillin.", "passages": ["Alexander Fleming discovered penicillin in 1928.", "Penicillin was not discovered by Alexander Fleming but by Marie Curie."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "The human heart has four chambers.", "passages": ["The human heart has four chambers.", "The human heart has two chambers."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "Canberra is the capital of Australia.", "passages": ["Canberra is the capital city of Australia.", "Sydney, not Canberra, is the capital of Australia."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "The Great Wall of China is in China.", "passages": ["The Great Wall of China is located in northern China.", "The Great Wall of China is located in Japan."]}
+{"gold": "CONFLICTING_EVIDENCE", "claim": "Mount Everest is in the Himalayas.", "passages": ["Mount Everest is in the Himalayas on the border of Nepal and China.", "Mount Everest is in the Andes mountain range in South America."]}
+{"gold": "SUPPORTED", "claim": "Mars has two moons.", "passages": ["Mars has two moons, Phobos and Deimos.", "Jupiter is the largest planet in the Solar System."]}
+{"gold": "SUPPORTED", "claim": "Tokyo is the capital of Japan.", "passages": ["Tokyo is the capital and most populous city of Japan.", "Mount Fuji is the highest mountain in Japan."]}
+{"gold": "SUPPORTED", "claim": "Marie Curie won two Nobel Prizes.", "passages": ["Marie Curie won Nobel Prizes in both Physics and Chemistry.", "Marie Curie was born in Warsaw."]}
+{"gold": "SUPPORTED", "claim": "The Amazon River flows through Brazil.", "passages": ["The Amazon River flows through Brazil on its way to the Atlantic Ocean.", "The Nile is a river in Africa."]}
+{"gold": "SUPPORTED", "claim": "Shakespeare wrote Hamlet.", "passages": ["William Shakespeare wrote the tragedy Hamlet around 1600.", "Macbeth is set in Scotland."]}
+{"gold": "SUPPORTED", "claim": "The Earth orbits the Sun.", "passages": ["The Earth orbits the Sun once every 365 days.", "Venus is the hottest planet in the Solar System."]}
+{"gold": "SUPPORTED", "claim": "Python was created by Guido van Rossum.", "passages": ["Guido van Rossum created the Python programming language.", "Java was released in 1995."]}
+{"gold": "SUPPORTED", "claim": "Antarctica is the coldest continent.", "passages": ["Antarctica is the coldest continent on Earth.", "Australia is both a country and a continent."]}
+{"gold": "SUPPORTED", "claim": "The Berlin Wall fell in 1989.", "passages": ["The Berlin Wall fell in November 1989.", "Berlin is the capital of Germany."]}
+{"gold": "SUPPORTED", "claim": "Insulin is produced by the pancreas.", "passages": ["The pancreas produces insulin.", "The liver produces bile."]}
+{"gold": "CONTRADICTED", "claim": "Mars has no moons.", "passages": ["Mars has two moons, Phobos and Deimos.", "Jupiter is the largest planet in the Solar System."]}
+{"gold": "CONTRADICTED", "claim": "Tokyo is the capital of China.", "passages": ["Tokyo is the capital and most populous city of Japan.", "Beijing hosted the 2008 Summer Olympics."]}
+{"gold": "CONTRADICTED", "claim": "Marie Curie won no Nobel Prizes.", "passages": ["Marie Curie won Nobel Prizes in both Physics and Chemistry.", "Marie Curie was born in Warsaw."]}
+{"gold": "CONTRADICTED", "claim": "The Amazon River flows through Egypt.", "passages": ["The Amazon River flows through Brazil on its way to the Atlantic Ocean.", "The Nile is a river in Africa."]}
+{"gold": "CONTRADICTED", "claim": "Shakespeare wrote Pride and Prejudice.", "passages": ["Pride and Prejudice was written by Jane Austen and published in 1813.", "Macbeth is set in Scotland."]}
+{"gold": "CONTRADICTED", "claim": "The Sun orbits the Earth.", "passages": ["The Earth orbits the Sun once every 365 days.", "Venus is the hottest planet in the Solar System."]}
+{"gold": "CONTRADICTED", "claim": "Python was created by Linus Torvalds.", "passages": ["Guido van Rossum created the Python programming language.", "Java was released in 1995."]}
+{"gold": "CONTRADICTED", "claim": "Antarctica is the hottest continent.", "passages": ["Antarctica is the coldest continent on Earth.", "Australia is both a country and a continent."]}
+{"gold": "CONTRADICTED", "claim": "The Berlin Wall fell in 1975.", "passages": ["The Berlin Wall fell in November 1989.", "Berlin is the capital of Germany."]}
+{"gold": "CONTRADICTED", "claim": "Insulin is produced by the liver.", "passages": ["The pancreas produces insulin.", "The liver produces bile."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Mars has underground cities.", "passages": ["Jupiter is the largest planet in the Solar System.", "Saturn has prominent rings."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Tokyo has the world's best sushi.", "passages": ["Mount Fuji is the highest mountain in Japan.", "Osaka is a large city in Japan."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Marie Curie enjoyed gardening.", "passages": ["Marie Curie was born in Warsaw.", "Pierre Curie was a physicist."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "The Amazon River is home to pink dolphins.", "passages": ["The Nile is a river in Africa.", "The Amazon rainforest spans nine countries."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Shakespeare wrote his plays in the morning.", "passages": ["Macbeth is set in Scotland.", "Hamlet is a prince of Denmark."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "The Earth has exactly one hundred volcanoes.", "passages": ["Venus is the hottest planet in the Solar System.", "Mercury is the closest planet to the Sun."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Guido van Rossum lives in Amsterdam.", "passages": ["Java was released in 1995.", "Linus Torvalds created Linux."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Antarctica has more penguins than any other continent.", "passages": ["Australia is both a country and a continent.", "The Arctic is located at the North Pole."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "The Berlin Wall was painted by famous artists.", "passages": ["Berlin is the capital of Germany.", "Munich is a city in Bavaria."]}
+{"gold": "INSUFFICIENT_EVIDENCE", "claim": "Insulin was first sold in 1923.", "passages": ["The liver produces bile.", "Glucagon is produced by the pancreas."]}

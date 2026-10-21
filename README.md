@@ -132,6 +132,14 @@ Two things this table shows:
 
 The reranker is not in this table. With oracle evidence it only reorders passages and does not change any verdict, so this setup cannot measure it.
 
+### Conflict set
+
+SciFact cannot measure conflict detection, so `experiments/conflict_set.jsonl` holds 40 hand-written items, 10 each of: a claim with one supporting and one refuting passage (gold conflict), supported, contradicted, and no evidence. Distractor passages are on unrelated topics. `python -m experiments.conflict_eval` runs it.
+
+At the current 0.95 margin: accuracy 92.5%, conflict precision 10/10 and recall 10/10, supported recall 100%, contradicted recall 70%. The margin hardly matters between 0 and 0.95; at 0.99 one conflict is missed.
+
+Treat this as a sanity check, not a benchmark. The set is small, written by the author, uses clean well-known facts, and its distractors are unrelated, whereas the false conflicts seen on SciFact came from topically close passages. The three misses are all contradictions that NLI scored at 1.0 but the named-entity gate discarded, because the claim swaps in a different entity ("Shakespeare wrote Pride and Prejudice" against a passage about Jane Austen). The gate blocks the most classic kind of contradiction.
+
 ### Calibration
 
 Accuracy of committed `SUPPORTED` / `CONTRADICTED` verdicts by the NLI probability behind them (dev, 85 verdicts; `python -m experiments.tune_scifact calibration`). Abstentions and conflicts are excluded.
