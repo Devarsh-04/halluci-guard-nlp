@@ -5,4 +5,4 @@ __pycache__
 *.ipynb
 *.pdf
 test_*.py
-tune_scifact.py
+experiments

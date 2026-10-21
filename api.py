@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Literal
@@ -122,6 +123,13 @@ class VerificationResult(BaseModel):
     )
 
 
+@asynccontextmanager
+async def lifespan(app):
+    if os.environ.get("HALLUCIGUARD_CORPUS"):
+        get_index()
+    yield
+
+
 app = FastAPI(
     title="HalluciGuard 2.0",
     description=(
@@ -130,6 +138,7 @@ app = FastAPI(
         "The first verification loads local models; no cloud LLM is used."
     ),
     version="0.3.0",
+    lifespan=lifespan,
 )
 _pipeline = None
 _index = None

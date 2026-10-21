@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api
-from search import verify_with_search
+from search import PassageIndex, verify_with_search
 
 
 @pytest.fixture(scope="module")
@@ -133,3 +133,70 @@ def test_search_endpoint_returns_trace(monkeypatch):
         )
     assert response.status_code == 200
     assert response.json()["claims"][0]["search"]["rounds"] == 2
+
+
+class WordEncoder:
+    """Deterministic bag-of-words stand-in for the sentence encoder."""
+
+    VOCAB = ["mars", "moons", "jupiter", "planet", "water", "ocean"]
+
+    def __init__(self):
+        self.calls = 0
+
+    def encode(self, texts, **kwargs):
+        import numpy as np
+
+        self.calls += 1
+        single = isinstance(texts, str)
+        rows = np.array([[float(word in text.lower()) for word in self.VOCAB]
+                         for text in ([texts] if single else texts)]) + 1e-6
+        rows /= np.linalg.norm(rows, axis=1, keepdims=True)
+        return rows[0] if single else rows
+
+
+@pytest.fixture
+def corpus(tmp_path):
+    import json
+
+    docs = [
+        {"doc_id": 1, "title": "Mars", "abstract": [
+            "Mars has two moons.", "They are Phobos and Deimos.", "Mars is red."]},
+        {"doc_id": 2, "title": "Jupiter", "abstract": ["Jupiter is the largest planet."]},
+        {"doc_id": 3, "title": "Long", "abstract": ["water " * 300, "water " * 300]},
+    ]
+    path = tmp_path / "corpus.jsonl"
+    path.write_text("\n".join(json.dumps(doc) for doc in docs))
+    return path
+
+
+def test_index_builds_two_sentence_windows(corpus):
+    index = PassageIndex.build(corpus, WordEncoder())
+    assert [p["id"] for p in index.passages] == ["1:0", "1:1", "2:0"]
+    assert index.passages[0]["text"] == "Mars has two moons. They are Phobos and Deimos."
+    assert index.passages[2]["source"] == "SciFact document 2: Jupiter"
+
+
+def test_index_search_ranks_and_pages(corpus):
+    index = PassageIndex.build(corpus, WordEncoder())
+    assert index.search("Which planet is largest, Jupiter?", 0, 1)[0]["id"] == "2:0"
+    first, second = index.search("Mars moons", 0, 1), index.search("Mars moons", 1, 1)
+    assert first[0]["id"] != second[0]["id"]
+    assert index.search("Mars moons", 5, 3) == []
+
+
+def test_index_cache_skips_encoding(corpus, tmp_path):
+    cache = tmp_path / "passage_index"
+    first = WordEncoder()
+    built = PassageIndex.build(corpus, first, cache=cache)
+    second = WordEncoder()
+    loaded = PassageIndex.build(corpus, second, cache=cache)
+    assert first.calls == 1 and second.calls == 0
+    assert loaded.passages == built.passages
+
+
+def test_server_builds_the_index_at_startup(monkeypatch):
+    built = []
+    monkeypatch.setenv("HALLUCIGUARD_CORPUS", "corpus.jsonl")
+    monkeypatch.setattr(api, "get_index", lambda: built.append(True))
+    with TestClient(api.app):
+        assert built == [True]

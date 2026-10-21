@@ -70,9 +70,9 @@ Per claim, the loop is:
 2. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with NLI probability of 0.9 or more, or if the evidence conflicts.
 3. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 5 passages and is verified against all passages so far (up to 15).
 
-Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The first request builds the index (about 40,000 passages for SciFact, a few minutes on CPU) and caches it next to the corpus.
+Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The index (about 40,000 passages for SciFact) is built at server startup, which takes a few minutes on CPU the first time, and is cached next to the corpus so later starts are fast.
 
-Open-corpus results on the SciFact dev split (300 claims; `tune_scifact.py retrieval`), against the oracle result above:
+Open-corpus results on the SciFact dev split (300 claims; `python -m experiments.tune_scifact retrieval`), against the oracle result above:
 
 | Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Seconds per claim |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -92,7 +92,7 @@ What this shows:
 
 Setup: SciFact claims with oracle evidence (annotated rationale sentences, or the cited abstracts when a claim has no annotated evidence). This measures verification only, not retrieval, and SciFact is scientific text. Labels: Support, Contradict, no evidence. The development split has no claims with both support and refute labels, so every conflict output on it is a false conflict.
 
-Thresholds were chosen on the train split (809 claims) and then checked once on dev (300 claims). `tune_scifact.py` reproduces the numbers; `tune_scifact.py ablation` prints the table.
+Thresholds were chosen on the train split (809 claims) and then checked once on dev (300 claims). `experiments/tune_scifact.py` reproduces the numbers (set `SCIFACT_DIR` to a folder holding the SciFact release's `claims_train.jsonl`, `claims_dev.jsonl` and `corpus.jsonl`); `python -m experiments.tune_scifact ablation` prints the table.
 
 | Version | Dev accuracy | Dev macro F1 | Dev supported recall |
 |---|---:|---:|---:|
@@ -129,7 +129,7 @@ The reranker is not in this table. With oracle evidence it only reorders passage
 
 ### Calibration
 
-Accuracy of committed `SUPPORTED` / `CONTRADICTED` verdicts by the NLI probability behind them (dev, 85 verdicts; `tune_scifact.py calibration`). Abstentions and conflicts are excluded.
+Accuracy of committed `SUPPORTED` / `CONTRADICTED` verdicts by the NLI probability behind them (dev, 85 verdicts; `python -m experiments.tune_scifact calibration`). Abstentions and conflicts are excluded.
 
 | Confidence | Claims | Mean confidence | Accuracy |
 |---|---:|---:|---:|
@@ -143,7 +143,7 @@ Expected calibration error is 0.186 on dev (0.147 on train). Higher confidence d
 
 ### Latency
 
-One request, after warm-up, CPU only (Apple M3), 30 SciFact dev claims with sentence-length passages (`tune_scifact.py latency`). Model load takes about 5 s on first use.
+One request, after warm-up, CPU only (Apple M3), 30 SciFact dev claims with sentence-length passages (`python -m experiments.tune_scifact latency`). Model load takes about 5 s on first use.
 
 | Passages | p50 | p95 |
 |---:|---:|---:|
