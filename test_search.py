@@ -104,14 +104,16 @@ def test_small_index_stops_when_exhausted(nlp):
     }
 
 
-def test_search_endpoint_is_off_without_a_corpus(monkeypatch):
+def test_search_uses_the_visa_knowledge_base_by_default(monkeypatch):
+    built = []
     monkeypatch.delenv("HALLUCIGUARD_CORPUS", raising=False)
-    with TestClient(api.app) as client:
-        response = client.post(
-            "/api/v1/verify-search", json={"question": "q", "answer": "Mars has two moons."}
-        )
-    assert response.status_code == 503
-    assert "HALLUCIGUARD_CORPUS" in response.json()["detail"]
+    monkeypatch.setattr(api, "_index", None)
+    monkeypatch.setattr(api, "get_pipeline", lambda: type("P", (), {"encoder": None})())
+    monkeypatch.setattr(api.PassageIndex, "build",
+                        lambda corpus, encoder, cache=None: built.append(corpus) or "index")
+    assert api.get_index() == "index"
+    assert built == [api.DEFAULT_CORPUS]
+    assert api.DEFAULT_CORPUS.exists()
 
 
 def test_search_endpoint_returns_trace(monkeypatch):
@@ -173,7 +175,7 @@ def test_index_builds_two_sentence_windows(corpus):
     index = PassageIndex.build(corpus, WordEncoder())
     assert [p["id"] for p in index.passages] == ["1:0", "1:1", "2:0"]
     assert index.passages[0]["text"] == "Mars has two moons. They are Phobos and Deimos."
-    assert index.passages[2]["source"] == "SciFact document 2: Jupiter"
+    assert index.passages[2]["source"] == "Jupiter (2)"
 
 
 def test_index_search_ranks_and_pages(corpus):

@@ -13,6 +13,17 @@
   const pane = document.querySelector(".result-pane");
   let passageId = 0;
 
+  const searching = () => form.elements.mode.value === "search";
+
+  function updateMode() {
+    $("own-evidence").hidden = searching();
+    $("own-evidence").disabled = searching();
+    $("kb-note").hidden = !searching();
+    $("evidence-list-heading").textContent = searching()
+      ? "Visa passages found" : "Compare supplied evidence";
+    resetResults();
+  }
+
   function updatePassages() {
     const rows = [...evidenceFields.children];
     rows.forEach((row, index) => {
@@ -61,7 +72,7 @@
     evidenceFields.replaceChildren();
     passageId = 0;
     addPassage();
-    resetResults();
+    updateMode();
   }
 
   function passageName(evidence) {
@@ -100,7 +111,9 @@
     $("claim-verdict").textContent = verdict.text;
     $("claim-verdict").className = `verdict-tag ${verdict.className}`;
     $("claim-text").textContent = claim.text;
-    $("claim-explanation").textContent = claim.explanation;
+    $("claim-explanation").textContent = claim.search
+      ? `${claim.explanation} Searched ${claim.search.passages_searched} knowledge-base passages; the most relevant are shown below.`
+      : claim.explanation;
     $("extraction-note").hidden = !claim.extraction_note;
     $("extraction-note").textContent = claim.extraction_note || "";
     $("extraction-note").className = `extraction-note${claim.review_required ? " needs-review" : ""}`;
@@ -178,15 +191,14 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const answer = $("answer").value.trim();
-    const body = {
-      question: $("question").value.trim(),
-      answer,
-      evidence: [...evidenceFields.children].map((row) => ({
+    const body = { question: $("question").value.trim(), answer };
+    if (!searching()) {
+      body.evidence = [...evidenceFields.children].map((row) => ({
         id: row.dataset.id,
         text: row.querySelector(".passage-text").value.trim(),
         source: row.querySelector(".passage-source").value.trim() || null,
-      })),
-    };
+      }));
+    }
     resetResults();
     $("empty-state").hidden = true;
     $("inputs").disabled = true;
@@ -196,7 +208,9 @@
     $("verify").firstChild.textContent = "Verifying answer";
     $("result-state").textContent = "Verification in progress";
     const started = Date.now();
-    $("status").textContent = "Checking your evidence locally. The first run may take longer while models load.";
+    $("status").textContent = searching()
+      ? "Searching the visa knowledge base locally. The first run may take longer while models load."
+      : "Checking your evidence locally. The first run may take longer while models load.";
     const loadingText = () => {
       const elapsed = Math.floor((Date.now() - started) / 1000);
       $("result-state").textContent = `Checking evidence (${elapsed}s)`;
@@ -204,7 +218,7 @@
     loadingText();
     const timer = setInterval(loadingText, 1000);
     try {
-      const response = await fetch("/api/v1/verify", {
+      const response = await fetch(searching() ? "/api/v1/verify-search" : "/api/v1/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -225,6 +239,7 @@
     } finally {
       clearInterval(timer);
       $("inputs").disabled = false;
+      $("own-evidence").disabled = searching();
       $("load-example").disabled = false;
       $("clear").disabled = false;
       $("verify").firstChild.textContent = "Verify answer";
@@ -243,15 +258,21 @@
   });
   $("clear").addEventListener("click", () => { resetForm(); $("question").focus(); });
   $("load-example").addEventListener("click", () => {
+    const mode = form.elements.mode.value;
     resetForm();
-    $("question").value = "Describe Mars and Jupiter.";
-    $("answer").value = "Mars has two moons and Jupiter is the largest planet.";
-    evidenceFields.replaceChildren();
-    addPassage("Mars has two moons, Phobos and Deimos.", "Astronomy example: Mars");
-    addPassage("Jupiter is the largest planet.", "Astronomy example: Jupiter");
-    addPassage("Mars has no moons.", "Deliberately conflicting test passage");
-    $("status").textContent = "Example loaded with a compound sentence and deliberately conflicting evidence. Verify to inspect actual model results.";
+    form.elements.mode.value = mode;
+    updateMode();
+    $("question").value = "Can I work while studying in Australia on a student visa?";
+    $("answer").value = "Student visa holders can work up to 60 hours per fortnight while their course is in session. They must keep Overseas Student Health Cover for their whole stay.";
+    if (!searching()) {
+      evidenceFields.replaceChildren();
+      addPassage("Student visa holders can work up to 48 hours per fortnight while their course is in session.", "Knowledge base: student visa work rights");
+      addPassage("All student visa holders must maintain Overseas Student Health Cover (OSHC) for the entire duration of their stay in Australia.", "Knowledge base: health cover");
+    }
+    $("status").textContent = "Example loaded: one claim gets the work-hours limit wrong. Verify to see the actual model results.";
     $("question").focus();
   });
+  form.querySelectorAll('input[name="mode"]').forEach((input) => input.addEventListener("change", updateMode));
   addPassage();
+  updateMode();
 })();

@@ -20,8 +20,8 @@ class PassageIndex:
 
     @classmethod
     def build(cls, corpus_path, encoder, cache=None):
-        """Index two-sentence windows of a SciFact-format corpus (JSONL with
-        doc_id, title, abstract as a list of sentences)."""
+        """Index two-sentence windows of a JSONL corpus with doc_id, title and
+        abstract (a list of sentences), the SciFact format."""
         cache = Path(cache) if cache else None
         if cache and cache.with_suffix(".json").exists():
             passages = json.loads(cache.with_suffix(".json").read_text())
@@ -36,7 +36,7 @@ class PassageIndex:
                     if len(text) <= MAX_WINDOW_CHARS:
                         passages.append({
                             "id": f"{doc['doc_id']}:{i}", "text": text,
-                            "source": f"SciFact document {doc['doc_id']}: {doc['title']}",
+                            "source": f"{doc['title']} ({doc['doc_id']})",
                         })
         embeddings = encoder.encode(
             [p["text"] for p in passages], batch_size=128,

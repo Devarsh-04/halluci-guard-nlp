@@ -152,6 +152,7 @@ _pipeline = None
 _index = None
 _load_lock = Lock()
 _static = Path(__file__).parent / "static"
+DEFAULT_CORPUS = Path(__file__).parent / "data" / "visa_knowledge_base.jsonl"
 app.mount("/static", StaticFiles(directory=_static), name="static")
 
 
@@ -170,18 +171,12 @@ def get_pipeline():
 
 def get_index():
     global _index
-    corpus = os.environ.get("HALLUCIGUARD_CORPUS")
-    if not corpus:
-        raise HTTPException(
-            status_code=503,
-            detail="Evidence search is off: set HALLUCIGUARD_CORPUS to a SciFact-format corpus.jsonl.",
-        )
+    corpus = os.environ.get("HALLUCIGUARD_CORPUS", DEFAULT_CORPUS)
     encoder = get_pipeline().encoder
     with _load_lock:
         if _index is None:
             _index = PassageIndex.build(
-                corpus, encoder,
-                cache=Path(corpus).parent / "passage_index",
+                corpus, encoder, cache=os.environ.get("HALLUCIGUARD_INDEX_CACHE"),
             )
     return _index
 

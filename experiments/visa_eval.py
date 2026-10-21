@@ -37,7 +37,7 @@ def main():
         evidence = [{"id": "source", "text": p["source"], "source": "v5 source passage"}]
         oracle.append((p["difficulty"], p["label"], pipe.verify("", p["answer"], evidence)["verdict"]))
     report("Given the source passage", oracle)
-    index = PassageIndex.build(HERE / "knowledge_base.jsonl", pipe.encoder)
+    index = PassageIndex.build(Path(__file__).parent.parent / "data" / "visa_knowledge_base.jsonl", pipe.encoder)
     print(f"\n{len(index.passages)} knowledge-base passages indexed")
     searched = [(p["difficulty"], p["label"], verify_with_search(pipe, index, "", p["answer"])["verdict"]) for p in pairs]
     report("Retrieved from the 120-passage knowledge base", searched)

@@ -7,6 +7,7 @@ RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requir
 
 COPY api.py pipeline.py search.py ./
 COPY static static
+COPY data data
 RUN python -c "from pipeline import VerificationPipeline; VerificationPipeline()"
 
 ENV HF_HUB_OFFLINE=1

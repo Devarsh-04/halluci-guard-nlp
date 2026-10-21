@@ -3,11 +3,13 @@
 [![CI](https://github.com/Devarsh-04/halluci-guard-nlp/actions/workflows/ci.yml/badge.svg)](https://github.com/Devarsh-04/halluci-guard-nlp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Checks whether each claim in an LLM answer is supported, contradicted, or unaddressed by evidence passages you supply, and returns a per-claim, per-passage verdict with scores.
+Checks an AI's answer to an Australian visa question, claim by claim. It finds the relevant passages in a built-in visa knowledge base (or uses sources you paste) and marks each claim supported, contradicted, not covered, or conflicting, with the passage that decided it.
 
 ![HalluciGuard UI showing one supported and one conflicting claim](docs/screenshot.jpg)
 
-Status: local prototype. It verifies against evidence you provide, or against passages it retrieves from a corpus you point it at.
+Example: the answer "Student visa holders can work up to 60 hours per fortnight" comes back **contradicted**, with the knowledge-base passage saying the limit is 48 hours; "They must keep Overseas Student Health Cover" comes back **supported**.
+
+Status: local prototype. The built-in knowledge base is 120 passages written for a university project in 2026; it has not been checked against the Department of Home Affairs and may be out of date. This is not legal or migration advice.
 
 ## Problem
 
@@ -46,7 +48,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-api.txt
 .venv/bin/uvicorn api:app --port 8000
 ```
 
-Open http://127.0.0.1:8000 for the UI, or `POST /api/v1/verify` (schema at `/docs`). `GET /health` checks the server.
+Open http://127.0.0.1:8000 for the UI. By default it searches the visa knowledge base, so you only enter a question and the AI's answer; switch to "Use my own sources" to paste passages instead. The API has `POST /api/v1/verify-search` (question and answer) and `POST /api/v1/verify` (question, answer and your passages); the schema is at `/docs` and `GET /health` checks the server.
 
 ```bash
 HALLUCIGUARD_RUN_MODEL_TESTS=1 .venv/bin/pytest -q
@@ -63,10 +65,10 @@ docker run -p 8000:8000 halluciguard
 
 ## Evidence search
 
-`POST /api/v1/verify-search` takes only `question` and `answer`, finds its own evidence, and verifies against it (`search.py`). It is off until you set `HALLUCIGUARD_CORPUS` to a SciFact-format `corpus.jsonl` (`doc_id`, `title`, `abstract` as a list of sentences); the Docker image does not include a corpus.
+`POST /api/v1/verify-search` takes only `question` and `answer`, finds its own evidence, and verifies against it (`search.py`). By default it searches `data/visa_knowledge_base.jsonl`, the 120 visa passages from the v5 coursework. To search another corpus in the same JSONL format (`doc_id`, `title`, `abstract` as a list of sentences), such as SciFact, set `HALLUCIGUARD_CORPUS`; for a large corpus also set `HALLUCIGUARD_INDEX_CACHE` to a file path so the index is built once and reused.
 
 ```bash
-HALLUCIGUARD_CORPUS=/path/to/corpus.jsonl .venv/bin/uvicorn api:app --port 8000
+HALLUCIGUARD_CORPUS=/path/to/corpus.jsonl HALLUCIGUARD_INDEX_CACHE=/path/to/passage_index .venv/bin/uvicorn api:app --port 8000
 ```
 
 Per claim, the loop is:
@@ -76,7 +78,7 @@ Per claim, the loop is:
 3. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with raw NLI probability of 0.9 or more, or if the evidence conflicts.
 4. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 15 passages and is verified against all passages so far. Measured under these rules they do not help (see the table), so leave them off.
 
-Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The index (about 40,000 passages for SciFact) is built at server startup, which takes a few minutes on CPU the first time, and is cached next to the corpus so later starts are fast.
+Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The visa index (144 passages) builds in about a second on first use. A custom corpus set with `HALLUCIGUARD_CORPUS` is indexed at server startup; for SciFact (about 40,000 passages) that takes a few minutes on CPU unless `HALLUCIGUARD_INDEX_CACHE` points at an existing cache.
 
 The rules were chosen on the train split from 15-passage features cached by `experiments/open_features.py` and swept by `experiments/open_rules.py`. On train, accuracy went from 56.2% to 63.9% and false refutes from 132 to 19.
 
@@ -219,7 +221,7 @@ Cost grows with the passage count because NLI runs on every claim-passage pair; 
 
 ### Domain check: visa pairs from v5
 
-The v5 coursework data was extracted from the notebooks into `experiments/visa_v5/`: 120 Australian visa knowledge-base passages and 120 source/answer pairs (60 grounded, 60 hallucinated: numerical changes, semantic changes, paraphrases and so on). `python -m experiments.visa_eval` runs 2.0 on them. A pair counts as "flagged" when the verdict is anything other than `SUPPORTED`.
+The v5 coursework data was extracted from the notebooks: 120 Australian visa knowledge-base passages (`data/visa_knowledge_base.jsonl`, which the app searches by default) and 120 source/answer pairs (`experiments/visa_v5/hallucination_pairs.jsonl`) (60 grounded, 60 hallucinated: numerical changes, semantic changes, paraphrases and so on). `python -m experiments.visa_eval` runs 2.0 on them. A pair counts as "flagged" when the verdict is anything other than `SUPPORTED`.
 
 | Evidence | Accuracy | Hallucination precision | Hallucination recall | Grounded answers wrongly flagged |
 |---|---:|---:|---:|---:|
