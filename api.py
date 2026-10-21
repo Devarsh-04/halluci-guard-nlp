@@ -106,6 +106,14 @@ class ClaimResult(VerificationScores):
             "all supplied passages are assessed."
         )
     )
+    confidence: float | None = Field(
+        None,
+        description=(
+            "Calibrated probability behind a SUPPORTED or CONTRADICTED verdict "
+            "(temperature-scaled NLI probability, fitted on SciFact; null otherwise). "
+            "Calibration on other domains is unverified."
+        ),
+    )
     search: SearchTrace | None = None
 
 

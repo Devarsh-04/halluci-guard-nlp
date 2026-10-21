@@ -200,3 +200,17 @@ def test_server_builds_the_index_at_startup(monkeypatch):
     monkeypatch.setattr(api, "get_index", lambda: built.append(True))
     with TestClient(api.app):
         assert built == [True]
+
+
+class LengthReranker:
+    """Prefers shorter passages, to show that reranking reorders the pool."""
+
+    def predict(self, pairs):
+        return [-len(text) for _, text in pairs]
+
+
+def test_reranker_reorders_the_candidate_pool(corpus):
+    plain = PassageIndex.build(corpus, WordEncoder())
+    reranked = PassageIndex.build(corpus, WordEncoder(), reranker=LengthReranker())
+    assert plain.search("Mars moons", 0, 3)[0]["id"] != reranked.search("Mars moons", 0, 3)[0]["id"]
+    assert reranked.search("Mars moons", 0, 1)[0]["id"] == "2:0"

@@ -1,10 +1,15 @@
 """Inference extracted from v5 research notebook cells 25 and 37."""
 
+import math
 import re
 
 
 NLI_LABELS = ("contradiction", "entailment", "neutral")
 CONFLICT_MARGIN = 0.95
+CONTRADICTION_THRESHOLD = 0.6
+MIN_CONTRADICTION_SIMILARITY = 0.5
+CONFIDENCE_TEMPERATURE = 2.6
+NLI_MODEL = "cross-encoder/nli-deberta-v3-base"
 
 
 class VerificationInputError(ValueError):
@@ -153,6 +158,13 @@ def aggregate_verdict(claims):
     return "SUPPORTED"
 
 
+def calibrated(probabilities, label, temperature=CONFIDENCE_TEMPERATURE):
+    logits = {name: math.log(max(value, 1e-9)) / temperature
+              for name, value in probabilities.items()}
+    top = max(logits.values())
+    return math.exp(logits[label] - top) / sum(math.exp(x - top) for x in logits.values())
+
+
 def resolve_evidence(evidence):
     supported = [item for item in evidence if item["verdict"] == "SUPPORTED"]
     contradicted = [item for item in evidence if item["verdict"] == "CONTRADICTED"]
@@ -207,12 +219,17 @@ def resolve_evidence(evidence):
             f"claim; {inconclusive_summary}."
         )
     representative = (supported or contradicted or evidence)[0]
+    confidence = None
+    if verdict == "SUPPORTED":
+        confidence = max(calibrated(i["nli_probabilities"], "entailment") for i in supported)
+    elif verdict == "CONTRADICTED":
+        confidence = max(calibrated(i["nli_probabilities"], "contradiction") for i in contradicted)
     return {
         **{key: representative[key] for key in (
             "combined_score", "ner_score", "embedding_score",
             "nli_label", "nli_probabilities",
         )},
-        "verdict": verdict, "explanation": explanation,
+        "verdict": verdict, "explanation": explanation, "confidence": confidence,
         "verified_evidence_id": representative["id"],
     }
 
@@ -221,7 +238,7 @@ def score_verification(ner, probabilities, similarity):
     scores = dict(zip(NLI_LABELS, probabilities, strict=True))
     label = max(scores, key=scores.get)
     combined = 0.2 * ner + 0.5 * scores["entailment"] + 0.3 * similarity
-    if label == "contradiction" and scores[label] >= 0.6:
+    if label == "contradiction" and scores[label] >= CONTRADICTION_THRESHOLD:
         verdict = "CONTRADICTED"
     elif label == "entailment":
         verdict = "SUPPORTED"
@@ -249,23 +266,8 @@ def entity_number_score(source_doc, answer_doc):
     return max(0.0, 1.0 - unsupported / total) if total else 1.0
 
 
-def named_entities_overlap(source_doc, claim_doc):
-    numeric_labels = {
-        "CARDINAL", "ORDINAL", "QUANTITY", "MONEY", "DATE", "TIME", "PERCENT",
-    }
-
-    def names(doc):
-        entities = {re.sub(r"^\W+|\W+$", "", entity.text.lower()) for entity in doc.ents
-                    if entity.label_ not in numeric_labels}
-        entities.discard("")
-        return entities or {token.lower_ for token in doc if token.pos_ == "PROPN"}
-
-    claim_names = names(claim_doc)
-    return not claim_names or bool(claim_names & names(source_doc))
-
-
 class VerificationPipeline:
-    def __init__(self):
+    def __init__(self, nli_model=NLI_MODEL):
         import spacy
         import torch
         from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -277,10 +279,9 @@ class VerificationPipeline:
         self.reranker = CrossEncoder(
             "cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu"
         )
-        model_name = "cross-encoder/nli-deberta-v3-small"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(nli_model)
         self.nli_model = AutoModelForSequenceClassification.from_pretrained(
-            model_name
+            nli_model
         ).eval()
         self.label_indices = [
             next(i for i, name in self.nli_model.config.id2label.items()
@@ -354,14 +355,13 @@ class VerificationPipeline:
                         "or a clear contradiction."
                     ),
                 }[candidate["verdict"]]
-                if candidate["verdict"] == "CONTRADICTED" and not named_entities_overlap(
-                    source_docs[evidence_index], claim_docs[claim_index]
-                ):
+                if (candidate["verdict"] == "CONTRADICTED"
+                        and similarity < MIN_CONTRADICTION_SIMILARITY):
                     candidate.update(
                         verdict="INSUFFICIENT_EVIDENCE",
                         explanation=(
-                            "No named-entity match was found, so this passage "
-                            "is inconclusive for this claim. Aliases are not resolved."
+                            "This passage is not similar enough to the claim to "
+                            "count as a contradiction."
                         ),
                     )
             claim.update(**resolve_evidence(candidates), evidence=candidates)

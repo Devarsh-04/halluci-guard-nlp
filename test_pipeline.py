@@ -3,7 +3,7 @@ import pytest
 from pipeline import (
     VerificationInputError, aggregate_verdict, entity_number_score,
     extract_claims, score_verification,
-    resolve_evidence,
+    calibrated, resolve_evidence,
 )
 
 
@@ -240,3 +240,19 @@ def test_confident_opposition_is_a_conflict():
 
 def test_entailment_below_old_threshold_is_supported():
     assert score_verification(0.0, [0.3, 0.4, 0.3], 0.2)["verdict"] == "SUPPORTED"
+
+
+def test_calibration_softens_confidence_without_changing_the_ranking():
+    raw = {"entailment": 0.99, "contradiction": 0.005, "neutral": 0.005}
+    softened = calibrated(raw, "entailment")
+    assert 0.5 < softened < 0.99
+    assert calibrated(raw, "entailment") > calibrated(raw, "neutral")
+    assert calibrated(raw, "entailment", temperature=1.0) == pytest.approx(0.99)
+
+
+def test_claim_confidence_is_set_only_for_committed_verdicts():
+    strong = {**passage("SUPPORTED", 0.99, 0.0),
+              "nli_probabilities": {"entailment": 0.99, "contradiction": 0.005, "neutral": 0.005}}
+    sup = resolve_evidence([strong])
+    assert 0.5 < sup["confidence"] < 0.99
+    assert resolve_evidence([passage("INSUFFICIENT_EVIDENCE", 0.1, 0.1)])["confidence"] is None

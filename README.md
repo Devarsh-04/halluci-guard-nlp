@@ -24,20 +24,20 @@ flowchart LR
     A[Answer] --> B[Claim extraction<br/>spaCy]
     B --> C[Retrieval<br/>MiniLM embeddings]
     C --> D[Rerank<br/>cross-encoder]
-    D --> E[NLI per passage<br/>DeBERTa-v3-small]
-    E --> F[Entity / number<br/>check]
+    D --> E[NLI per passage<br/>DeBERTa-v3-base]
+    E --> F[Similarity gate<br/>on contradictions]
     F --> G[Resolve per claim]
-    G --> H[Verdict + scores]
+    G --> H[Verdict + confidence]
 ```
 
 1. Split the answer into atomic claims (`pipeline.py`, `extract_claims`).
 2. Rank the supplied passages for each claim with embeddings, then a cross-encoder.
 3. Run NLI (entailment / contradiction / neutral) on each claim-passage pair.
-4. Passage verdict: `SUPPORTED` if entailment is the top label; `CONTRADICTED` if contradiction is the top label at 0.6 or more and the passage shares a named entity with the claim; otherwise `INSUFFICIENT_EVIDENCE`.
+4. Passage verdict: `SUPPORTED` if entailment is the top label; `CONTRADICTED` if contradiction is the top label at 0.6 or more and the passage is at least 0.5 similar to the claim (MiniLM cosine); otherwise `INSUFFICIENT_EVIDENCE`.
 5. Claim verdict: supported and contradicted passages yield `CONFLICTING_EVIDENCE` only when both sides reach 0.95 confidence; otherwise the stronger side wins.
 6. The answer verdict aggregates its claims.
 
-Source authority is never assessed. Scores are research scores, not calibrated confidence.
+Source authority is never assessed. `confidence` on a `SUPPORTED` or `CONTRADICTED` claim is a temperature-scaled NLI probability (T = 2.6, fitted on the SciFact train split); the other scores are uncalibrated research scores. Calibration was checked on SciFact only.
 
 ## Run it
 
@@ -71,119 +71,175 @@ HALLUCIGUARD_CORPUS=/path/to/corpus.jsonl .venv/bin/uvicorn api:app --port 8000
 
 Per claim, the loop is:
 
-1. Retrieve the 5 best two-sentence windows by MiniLM similarity and verify the claim against them.
+1. Retrieve the 5 best two-sentence windows by MiniLM similarity and verify the claim against them. (`PassageIndex` can also rerank a pool of 30 with the cross-encoder, but that scored worse end to end, so the endpoint does not use it.)
 2. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with NLI probability of 0.9 or more, or if the evidence conflicts.
 3. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 5 passages and is verified against all passages so far (up to 15).
 
 Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The index (about 40,000 passages for SciFact) is built at server startup, which takes a few minutes on CPU the first time, and is cached next to the corpus so later starts are fast.
 
-Open-corpus results on the SciFact dev split (300 claims; `python -m experiments.tune_scifact retrieval`), against the oracle result above:
+Open-corpus results on the SciFact dev split (300 claims; `python -m experiments.tune_scifact retrieval`), against the oracle result below:
 
 | Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Seconds per claim |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Oracle rationale sentences | 55.3% | 0.513 | 33.9% | 32.8% | 5 | 17 | 3 | n/a |
-| Retrieved, 0 retries (default) | 49.3% | 0.484 | 31.5% | 46.9% | 10 | 38 | 6 | 0.30 |
-| Retrieved, 2 retries | 47.7% | 0.478 | 38.7% | 51.6% | 13 | 60 | 7 | 1.17 |
+| Oracle rationale sentences | 64.3% | 0.635 | 41.1% | 56.2% | 4 | 12 | 3 | n/a |
+| Retrieved, 0 retries (**default**) | 55.3% | 0.558 | 37.9% | 67.2% | 6 | 52 | 11 | 0.65 |
+| Retrieved, reranked, 0 retries | 52.7% | 0.535 | 40.3% | 60.9% | 14 | 51 | 15 | 1.59 |
+| Retrieved, reranked, 2 retries | 50.7% | 0.520 | 40.3% | 71.9% | 14 | 75 | 16 | 2.91 |
 
 The gold document is among the top 5 passages for 85.1% of the 188 labeled dev claims, the top 10 for 91.5% and the top 15 for 95.2%.
 
 What this shows:
 
-- Retrieval is not the bottleneck. Finding the right document works; the drop from oracle evidence comes from verifying against whole retrieved windows instead of annotated rationales, which adds off-point passages that NLI sometimes reads as contradictions (false refutes 17 to 38).
-- Retries raise recall (supported 31.5% to 38.7%) but add false refutes (38 to 60), because each extra passage is another chance for a spurious contradiction. Overall accuracy goes down slightly. On this benchmark the retry loop does not pay for itself, so it is off by default; set `max_retries` to 1 or 2 if recall matters more than precision.
+- Retrieval is not the main bottleneck. Finding the right document works; the drop from oracle evidence (64.3% to 55.3%) comes from verifying against whole retrieved windows instead of annotated rationales. Off-point passages bring false refutes from 12 to 52 and conflicts from 3 to 11.
+- The cross-encoder reranker improves retrieval (see Reranker) but lowers end-to-end accuracy (55.3% to 52.7%), with more false supports (6 to 14) and conflicts (11 to 15), and costs 2.4x the time. I did not establish why. The endpoint therefore does not rerank by default.
+- Retries raise contradicted recall (60.9% to 71.9%) but add false refutes (51 to 75) and lower accuracy (52.7% to 50.7%), because each extra passage is another chance for a spurious contradiction. They are off by default; set `max_retries` to 1 or 2 if recall matters more than precision.
 - Claims with no gold evidence still receive retrieved passages, so abstaining correctly is harder than in the oracle setting.
 
 ## Evaluation: SciFact
 
 Setup: SciFact claims with oracle evidence (annotated rationale sentences, or the cited abstracts when a claim has no annotated evidence). This measures verification only, not retrieval, and SciFact is scientific text. Labels: Support, Contradict, no evidence. The development split has no claims with both support and refute labels, so every conflict output on it is a false conflict.
 
-Thresholds were chosen on the train split (809 claims) and then checked once on dev (300 claims). `experiments/tune_scifact.py` reproduces the numbers (set `SCIFACT_DIR` to a folder holding the SciFact release's `claims_train.jsonl`, `claims_dev.jsonl` and `corpus.jsonl`); `python -m experiments.tune_scifact ablation` prints the table.
+Rules and thresholds were chosen on the train split (809 claims) and then checked on dev (300 claims). Dev was looked at once per candidate change, so treat later rows as slightly optimistic. `experiments/tune_scifact.py` reproduces the numbers (set `SCIFACT_DIR` to a folder holding the SciFact release's `claims_train.jsonl`, `claims_dev.jsonl` and `corpus.jsonl`); `python -m experiments.tune_scifact ablation` prints the ablation table.
 
-| Version | Dev accuracy | Dev macro F1 | Dev supported recall |
-|---|---:|---:|---:|
-| First prototype | 49.3% | 0.442 | 18.5% |
-| Current | 55.3% | 0.513 | 33.9% |
+| Version | Dev accuracy | Dev macro F1 | Dev supported recall | Dev contradicted recall |
+|---|---:|---:|---:|---:|
+| First prototype (small NLI) | 49.3% | 0.442 | 18.5% | 32.8% |
+| Rules tuned on train (small NLI) | 55.3% | 0.513 | 33.9% | 32.8% |
+| Similarity gate instead of entity gate (small NLI) | 59.7% | 0.575 | 33.9% | 48.4% |
+| Larger NLI model (**current**) | 64.3% | 0.635 | 41.1% | 56.2% |
 
-The dev figures in the second row come from replaying the decision rules over cached model outputs, which skips the claim extractor (it splits 4 of 300 dev claims).
+Rows after the first replay the decision rules over cached model outputs, which skips the claim extractor (it splits 4 of 300 dev claims).
 
 ### Ablation
 
-Each row adds one rule to the one above it, except the last, which is the previous prototype's rule set.
+All rows use the current DeBERTa-v3-base model. Each row adds one rule to the one above it, except the last two, which are the earlier prototype's rules.
 
 | Configuration | Split | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| NLI argmax only | train | 59.8% | 0.592 | 36.1% | 61.3% | 12 | 77 | 20 |
-| NLI argmax only | dev | 58.7% | 0.580 | 32.3% | 60.9% | 4 | 25 | 8 |
-| + conflict margin 0.95 | train | 61.1% | 0.602 | 38.6% | 62.4% | 14 | 78 | 7 |
-| + conflict margin 0.95 | dev | 59.7% | 0.587 | 33.9% | 62.5% | 4 | 27 | 3 |
-| + contradiction >= 0.6 | train | 60.9% | 0.599 | 38.6% | 60.7% | 14 | 75 | 7 |
-| + contradiction >= 0.6 | dev | 59.3% | 0.583 | 33.9% | 60.9% | 4 | 26 | 3 |
-| + entity gate on refutes (**current**) | train | 60.3% | 0.576 | 39.2% | 41.6% | 14 | 35 | 5 |
-| + entity gate on refutes (**current**) | dev | 55.3% | 0.513 | 33.9% | 32.8% | 5 | 17 | 3 |
-| + entity gate on supports | train | 55.1% | 0.516 | 25.0% | 42.2% | 6 | 36 | 4 |
-| + entity gate on supports | dev | 50.3% | 0.453 | 21.0% | 32.8% | 3 | 17 | 3 |
-| Previous prototype (entailment >= 0.6, combined >= 0.6, entity gate on both) | train | 53.6% | 0.499 | 22.0% | 41.0% | 5 | 36 | 11 |
-| Previous prototype (entailment >= 0.6, combined >= 0.6, entity gate on both) | dev | 49.7% | 0.448 | 19.4% | 32.8% | 3 | 15 | 6 |
+| NLI argmax only | train | 64.9% | 0.649 | 40.7% | 69.4% | 14 | 53 | 10 |
+| NLI argmax only | dev | 66.3% | 0.669 | 40.3% | 73.4% | 3 | 16 | 5 |
+| + conflict margin 0.95 | train | 65.1% | 0.651 | 40.7% | 70.5% | 14 | 54 | 7 |
+| + conflict margin 0.95 | dev | 66.7% | 0.669 | 41.1% | 73.4% | 3 | 17 | 3 |
+| + contradiction >= 0.6 | train | 64.9% | 0.648 | 40.7% | 69.4% | 14 | 53 | 7 |
+| + contradiction >= 0.6 | dev | 66.7% | 0.669 | 41.1% | 73.4% | 3 | 17 | 3 |
+| + entity gate on refutes | train | 61.3% | 0.596 | 40.7% | 45.1% | 15 | 25 | 7 |
+| + entity gate on refutes | dev | 61.7% | 0.596 | 41.1% | 42.2% | 3 | 8 | 3 |
+| + similarity gate >= 0.5 on refutes instead (**current**) | train | 64.5% | 0.643 | 41.0% | 60.7% | 16 | 30 | 5 |
+| + similarity gate >= 0.5 on refutes instead (**current**) | dev | 64.3% | 0.635 | 41.1% | 56.2% | 4 | 12 | 3 |
+| + entity gate on supports | train | 56.4% | 0.540 | 26.5% | 45.7% | 7 | 25 | 6 |
+| + entity gate on supports | dev | 55.0% | 0.523 | 25.0% | 42.2% | 2 | 8 | 3 |
+| + entailment >= 0.6 and combined >= 0.6 (previous) | train | 56.0% | 0.534 | 25.6% | 45.1% | 6 | 25 | 7 |
+| + entailment >= 0.6 and combined >= 0.6 (previous) | dev | 54.7% | 0.519 | 24.2% | 42.2% | 2 | 8 | 4 |
 
-Two things this table shows:
+Things this table shows:
 
-- Raw NLI already beats the current configuration on macro F1. The entity gate on refutes is a deliberate trade: it gives up contradicted recall (60.9% to 32.8% on dev) to cut false refutations (26 to 17), because wrongly calling a true claim false is the costlier error here. If that trade is wrong for your use, drop the gate.
-- The combined (NER + embedding + NLI) score and the entity gate on supports were what suppressed correct support verdicts in the first prototype.
+- Raw NLI is strong with the base model (dev accuracy 66.7%, macro F1 0.669 once the 0.6 contradiction threshold and conflict margin are added). The current configuration gives some of that up on purpose: the similarity gate on refutes cuts contradicted recall (73.4% to 56.2% on dev) to cut false refutations (17 to 12 on dev, 53 to 30 on train), because wrongly calling a true claim false is the costlier error here. If recall matters more, drop the gate.
+- The similarity gate beats the named-entity gate on recall: 56.2% against 42.2% contradicted recall on dev, at the price of a few more false refutes (12 against 8 on dev, 30 against 25 on train). The entity gate also misses contradictions that swap in a different entity, which the conflict set below exposes.
+- The combined (NER + embedding + NLI) score and a gate on supports are what suppressed correct support verdicts in the first prototype (supported recall 41.1% down to about 25%).
+- Model size: the base model beats the small one with identical rules (dev accuracy 64.3% against 59.7%, contradicted recall 56.2% against 48.4%, false refutes 12 against 15). It is about twice as slow (see Latency) and somewhat larger.
 
-The reranker is not in this table. With oracle evidence it only reorders passages and does not change any verdict, so this setup cannot measure it.
+I also tried a lower similarity gate (0.3) with a stricter contradiction threshold (0.9) because it scored higher on train. It fails the conflict set: unrelated passages get called contradictions and unrelated passages produce false conflicts. That is why the gate stays at 0.5.
+
+### Reranker
+
+With oracle evidence the reranker only reorders passages, so the ablation cannot show it. `python -m experiments.rerank_eval` measures it on retrieval instead: for each labeled claim, 30 candidate passages from the bi-encoder, then reranked by the cross-encoder. A hit means a passage from a gold document is in the top k.
+
+| Split | Labeled claims | Ranking | Hit@1 | Hit@3 | Hit@5 | Hit@10 | MRR |
+|---|---:|---|---:|---:|---:|---:|---:|
+| dev | 188 | bi-encoder | 69.7% | 82.4% | 85.1% | 91.5% | 0.772 |
+| dev | 188 | bi-encoder + reranker | 76.6% | 88.3% | 90.4% | 94.7% | 0.825 |
+| train | 505 | bi-encoder | 72.1% | 84.2% | 87.3% | 92.7% | 0.789 |
+| train | 505 | bi-encoder + reranker | 78.8% | 89.1% | 92.7% | 94.9% | 0.844 |
+
+The reranker improves retrieval on both splits. End to end it did not help, though: see the open-corpus table under Evidence search.
+
+### Conflict set
+
+SciFact cannot measure conflict detection, so `experiments/conflict_set.jsonl` holds 40 hand-written items, 10 each of: a claim with one supporting and one refuting passage (gold conflict), supported, contradicted, and no evidence. Distractor passages are on unrelated topics. `python -m experiments.conflict_eval` runs it.
+
+Current configuration: accuracy 100%, conflict precision 10/10 and recall 10/10, supported and contradicted recall 100%. The conflict margin makes no difference anywhere from 0 to 0.99 on this set.
+
+Treat this as a sanity check, not a benchmark. The set is small, written by the author, uses clean well-known facts, and its distractors are unrelated, whereas the false conflicts seen on SciFact came from topically close passages. It did catch a real flaw: the earlier named-entity gate discarded three NLI contradictions that swap in a different entity ("Shakespeare wrote Pride and Prejudice" against a passage about Jane Austen), which scored 92.5% before the similarity gate replaced it.
 
 ### Calibration
 
-Accuracy of committed `SUPPORTED` / `CONTRADICTED` verdicts by the NLI probability behind them (dev, 85 verdicts; `python -m experiments.tune_scifact calibration`). Abstentions and conflicts are excluded.
+`confidence` on a committed verdict is the NLI probability after temperature scaling (T = 2.6, fitted on train). Dev accuracy of committed `SUPPORTED` / `CONTRADICTED` verdicts by confidence (103 verdicts; `python -m experiments.tune_scifact calibration`); abstentions and conflicts are excluded.
+
+Raw probabilities (T = 1):
 
 | Confidence | Claims | Mean confidence | Accuracy |
 |---|---:|---:|---:|
-| 0.00-0.50 | 2 | 0.414 | 50.0% |
-| 0.50-0.70 | 6 | 0.653 | 50.0% |
-| 0.70-0.90 | 13 | 0.850 | 61.5% |
-| 0.90-0.99 | 33 | 0.964 | 72.7% |
-| 0.99-1.00 | 31 | 0.996 | 87.1% |
+| 0.50-0.70 | 4 | 0.622 | 75.0% |
+| 0.70-0.90 | 7 | 0.793 | 71.4% |
+| 0.90-0.99 | 25 | 0.966 | 84.0% |
+| 0.99-1.00 | 67 | 0.998 | 86.6% |
 
-Expected calibration error is 0.186 on dev (0.147 on train). Higher confidence does mean higher accuracy, so the score ranks verdicts usefully, but the probabilities are overconfident: verdicts at 0.96 are right about 73% of the time. Treat scores as rankings, not probabilities. The dev bins are small (2 to 33 claims), so the figures are rough.
+Expected calibration error 0.127. Raw probabilities are overconfident: verdicts at 0.97 are right about 84% of the time.
+
+Temperature scaled (T = 2.6):
+
+| Confidence | Claims | Mean confidence | Accuracy |
+|---|---:|---:|---:|
+| 0.00-0.50 | 1 | 0.465 | 0.0% |
+| 0.50-0.70 | 14 | 0.596 | 85.7% |
+| 0.70-0.90 | 58 | 0.836 | 81.0% |
+| 0.90-0.99 | 30 | 0.939 | 93.3% |
+
+Expected calibration error 0.056 on dev (0.021 on train). Mean confidence is 0.83 against 84.5% accuracy. Two cautions: the dev bins are small, and the temperature was fitted on SciFact, so it says nothing about other domains. The verdict thresholds (0.6 contradiction, 0.95 conflict, 0.9 search stop) still act on raw probabilities.
 
 ### Latency
 
-One request, after warm-up, CPU only (Apple M3), 30 SciFact dev claims with sentence-length passages (`python -m experiments.tune_scifact latency`). Model load takes about 5 s on first use.
+One request, after warm-up, CPU only (Apple M3), 30 SciFact dev claims with sentence-length passages (`python -m experiments.tune_scifact latency`). Model load takes about 5 s on first use. The previous small NLI model took 131 ms, 380 ms and 750 ms at these sizes.
 
 | Passages | p50 | p95 |
 |---:|---:|---:|
-| 3 | 131 ms | 158 ms |
-| 10 | 380 ms | 408 ms |
-| 20 (API maximum) | 750 ms | 791 ms |
+| 3 | 229 ms | 260 ms |
+| 10 | 669 ms | 794 ms |
+| 20 (API maximum) | 1453 ms | 1880 ms |
 
-Cost grows roughly 37 ms per passage because NLI runs on every claim-passage pair. There is no LLM API call, so there is no per-request API cost.
+Cost grows with the passage count because NLI runs on every claim-passage pair. There is no LLM API call, so there is no per-request API cost.
+
+### Domain check: visa pairs from v5
+
+The v5 coursework data was extracted from the notebooks into `experiments/visa_v5/`: 120 Australian visa knowledge-base passages and 120 source/answer pairs (60 grounded, 60 hallucinated: numerical changes, semantic changes, paraphrases and so on). `python -m experiments.visa_eval` runs 2.0 on them. A pair counts as "flagged" when the verdict is anything other than `SUPPORTED`.
+
+| Evidence | Accuracy | Hallucination precision | Hallucination recall | Grounded answers wrongly flagged |
+|---|---:|---:|---:|---:|
+| The pair's own source passage | 97.5% | 96.7% | 98.3% | 2 of 60 |
+| Retrieved from the 120-passage knowledge base | 73.3% | 65.6% | 98.3% | 31 of 60 |
+
+With its source passage, 2.0 caught 29 of 30 numerical and 26 of 26 semantic hallucinations. The retrieval row is much worse, but read it carefully: the pairs' source sentences are short paraphrases, not the knowledge-base text, so a grounded answer is often not fully covered by what retrieval finds. That row measures knowledge-base coverage as much as verification, and it used bi-encoder ranking only.
+
+Treat all of this as a smoke test. The pairs are synthetic, written by the v5 authors, and they are small; the knowledge base is not authoritative, dated or checked against Home Affairs. Nothing here shows the system is safe for real visa questions. That needs a real, dated corpus and an expert-labelled evaluation set.
 
 ## Failure modes
 
 | Failure mode | Evidence | Mitigation | Status |
 |---|---|---|---|
-| Too many abstentions: correct entailments labelled insufficient | First prototype labelled 88 of 124 supported dev claims insufficient | Removed the combined-score gate and the entity gate on supports | Supported recall 18.5% to 33.9%; still low |
-| False conflicts: one weak opposing passage forces a conflict | 5 false conflicts on dev, 11 on train, for claims with a single gold label | Conflict needs both sides at 0.95 or more | Down to 3 on dev; no gold conflicts exist to measure sensitivity |
-| Wrongly refuting a true claim | 77 train false refutes with raw NLI | Named-entity overlap required for `CONTRADICTED` | Halves false refutes; costs contradicted recall |
-| Agent keeps searching without converging | Mean 2.21 rounds per claim with 2 retries | Retry budget (default 0, maximum 2) and a 0.9 confidence stop | Retries are off by default; when enabled they are bounded but add false refutes |
-| Topically similar but non-entailing evidence | Retrieval finds the right document 85% of the time (top 5), yet open-corpus false refutes are 38 against 17 with oracle evidence | Per-passage NLI after ranking, so similarity alone never yields `SUPPORTED` | Partly mitigated: it still produces extra false refutes when retrieved windows are off-point |
+| Too many abstentions: correct entailments labelled insufficient | First prototype labelled 88 of 124 supported dev claims insufficient | Removed the combined-score gate and the gate on supports | Supported recall 18.5% to 41.1%; still low |
+| False conflicts: one weak opposing passage forces a conflict | 5 false conflicts on dev, 11 on train, for claims with a single gold label | Conflict needs both sides at 0.95 or more | 3 on dev with oracle evidence, 11 with retrieved evidence; the hand-written conflict set is 10/10 |
+| Wrongly refuting a true claim | 53 train false refutes with raw NLI | A contradiction needs claim-passage similarity of 0.5 or more | Train false refutes 30; costs contradicted recall (70% to 61% on train) |
+| Agent keeps searching without converging | Mean 1.89 rounds per claim with 2 retries | Retry budget (default 0, maximum 2) and a 0.9 confidence stop | Retries are off by default; when enabled they are bounded but add false refutes (51 to 75) |
+| Topically similar but non-entailing evidence | Retrieval finds the right document 85% of the time (top 5), yet open-corpus false refutes are 52 against 12 with oracle evidence | Per-passage NLI after ranking, so similarity alone never yields `SUPPORTED`; similarity gate on contradictions | Open: still the main source of error in the search endpoint |
 | Passage too long for the NLI model | Inputs over 512 tokens | Request is rejected with a clear error | Caller must shorten passages |
-| Aliases and paraphrased entities | Entity check matches names, not aliases | None | Open |
+| Entity swapped into the claim | Earlier entity gate dropped 3 of 10 conflict-set contradictions | Replaced by the similarity gate | Fixed on the conflict set |
+| Text outside the evaluated domain | Tested on science (SciFact) and a small synthetic visa set only | None | Open: no real visa corpus or expert-labelled set exists here |
 
 ## Limitations
 
-- Search works over a local SciFact-format corpus only. There is no web search, no LLM and no query rewriting, so the retry loop is a deeper look in one ranking and not reasoning.
-- One benchmark, scientific text, oracle evidence.
-- Contradicted recall is 32.8% on dev.
-- Scores are overconfident (ECE 0.186 on dev); latency was measured on one machine with short passages.
+- Search works over a local SciFact-format corpus only. There is no web search, no LLM and no query rewriting, so the retry loop is a deeper look in one ranking and not reasoning. With retrieved evidence, accuracy falls from 64.3% to 55.3% on SciFact dev.
+- Quantitative results are SciFact (scientific text) plus a 40-item hand-written conflict set and 120 synthetic visa pairs. There is no real visa corpus and no expert-labelled evaluation set.
+- Contradicted recall is 56.2% on dev, and I chose that over 73% to avoid false refutations.
+- Confidence is calibrated on SciFact only; the verdict thresholds still use raw probabilities.
+- Latency is from one machine with short passages (1.4 s at the 20-passage API maximum).
 
 ## Next steps
 
-- A labelled conflict set (a few dozen claims with both supporting and refuting passages), since SciFact cannot measure conflict detection.
-- Raise contradicted recall (32.8% on dev) without bringing back false refutations, for example with a larger NLI model or fine-tuning.
-- Temperature scaling, so scores can be used as probabilities (ECE is 0.186 on dev).
-- A retrieval benchmark that can measure the reranker, which oracle evidence cannot.
-- A domain corpus with dates and sources (for example the visa material from v5) and a labelled evaluation set for it, before any claim about that domain.
+- A real, dated visa corpus from authoritative sources and an expert-labelled evaluation set, before any claim about that domain. This is the biggest gap and needs people and data, not code.
+- A larger, harder conflict set with topically close passages, since the current 40 items use unrelated distractors.
+- Work out why reranking helps retrieval but hurts end to end, and fix the false refutes that retrieved windows cause.
+- Move the verdict thresholds onto the calibrated probabilities.
+- Fine-tune the NLI model on in-domain data.
 
 ## Background: HalluciGuard v5 (coursework)
 
