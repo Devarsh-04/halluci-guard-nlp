@@ -3,7 +3,7 @@ import pytest
 from pipeline import (
     VerificationInputError, aggregate_verdict, entity_number_score,
     extract_claims, score_verification,
-    calibrated, resolve_evidence,
+    calibrated, contradiction_counts, resolve_evidence,
 )
 
 
@@ -286,3 +286,20 @@ def test_ranked_resolution_ignores_an_opposing_passage_that_is_not_relevant():
         margin=0.99, ranked=True,
     )
     assert result["verdict"] == "CONTRADICTED"
+
+
+def test_search_contradictions_need_relevance_or_overwhelming_confidence():
+    assert contradiction_counts(0.97, 0.7, 5.0, retrieved=True)
+    assert not contradiction_counts(0.97, 0.7, 3.5, retrieved=True)
+    assert contradiction_counts(0.9995, 0.55, 3.5, retrieved=True)
+    assert not contradiction_counts(0.9995, 0.55, 2.0, retrieved=True)
+    assert contradiction_counts(0.97, 0.55, 0.0, retrieved=False)
+    assert not contradiction_counts(0.97, 0.4, 9.0, retrieved=False)
+
+
+def test_conflict_needs_a_relevant_opposing_passage():
+    relevant = {**passage("SUPPORTED", 0.99, 0.0), "rerank_score": 9.0}
+    irrelevant = {**passage("CONTRADICTED", 0.0, 0.99), "rerank_score": 1.0}
+    assert resolve_evidence([relevant, irrelevant])["verdict"] != "CONFLICTING_EVIDENCE"
+    irrelevant["rerank_score"] = 6.0
+    assert resolve_evidence([relevant, irrelevant])["verdict"] == "CONFLICTING_EVIDENCE"

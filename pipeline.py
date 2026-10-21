@@ -8,11 +8,16 @@ NLI_LABELS = ("contradiction", "entailment", "neutral")
 CONFLICT_MARGIN = 0.95
 CONTRADICTION_THRESHOLD = 0.6
 MIN_CONTRADICTION_SIMILARITY = 0.5
+CONFLICT_MIN_RELEVANCE = 4.0
 RETRIEVED_CONTRADICTION_THRESHOLD = 0.95
 RETRIEVED_MIN_SIMILARITY = 0.6
 RETRIEVED_MIN_RELEVANCE = 4.0
 RETRIEVED_MIN_SUPPORT_RELEVANCE = -2.0
 RETRIEVED_CONFLICT_MARGIN = 0.99
+RETRIEVED_TOP_K = 5
+STRONG_CONTRADICTION = 0.999
+STRONG_CONTRADICTION_SIMILARITY = 0.5
+STRONG_CONTRADICTION_RELEVANCE = 3.0
 CONFIDENCE_TEMPERATURE = 2.6
 NLI_MODEL = "cross-encoder/nli-deberta-v3-base"
 
@@ -163,6 +168,18 @@ def aggregate_verdict(claims):
     return "SUPPORTED"
 
 
+def contradiction_counts(probability, similarity, relevance, retrieved):
+    if not retrieved:
+        return similarity >= MIN_CONTRADICTION_SIMILARITY
+    return (
+        similarity >= RETRIEVED_MIN_SIMILARITY and relevance >= RETRIEVED_MIN_RELEVANCE
+    ) or (
+        probability >= STRONG_CONTRADICTION
+        and similarity >= STRONG_CONTRADICTION_SIMILARITY
+        and relevance >= STRONG_CONTRADICTION_RELEVANCE
+    )
+
+
 def calibrated(probabilities, label, temperature=CONFIDENCE_TEMPERATURE):
     logits = {name: math.log(max(value, 1e-9)) / temperature
               for name, value in probabilities.items()}
@@ -195,9 +212,15 @@ def resolve_evidence(evidence, margin=CONFLICT_MARGIN, ranked=False):
                 else:
                     supported = []
         else:
+            relevant = lambda i: i.get("rerank_score", math.inf) >= CONFLICT_MIN_RELEVANCE
             support_strength = max(passage_strength(i) for i in supported)
             contradiction_strength = max(passage_strength(i) for i in contradicted)
-            if min(support_strength, contradiction_strength) < margin:
+            conflict = (
+                any(relevant(i) for i in supported)
+                and any(relevant(i) for i in contradicted)
+                and min(support_strength, contradiction_strength) >= margin
+            )
+            if not conflict:
                 if support_strength > contradiction_strength:
                     contradicted = []
                 else:
@@ -345,6 +368,8 @@ class VerificationPipeline:
             for item, score in zip(candidates, rerank_scores, strict=True):
                 item["rerank_score"] = float(score)
             candidates.sort(key=lambda item: item["rerank_score"], reverse=True)
+            if retrieved:
+                candidates = candidates[:RETRIEVED_TOP_K]
             for candidate in candidates:
                 inputs = self.tokenizer(
                     candidate["text"], claim["text"],
@@ -384,13 +409,11 @@ class VerificationPipeline:
                         "or a clear contradiction."
                     ),
                 }[candidate["verdict"]]
-                min_similarity = (RETRIEVED_MIN_SIMILARITY if retrieved
-                                  else MIN_CONTRADICTION_SIMILARITY)
                 irrelevant = (
                     candidate["verdict"] == "CONTRADICTED"
-                    and (similarity < min_similarity
-                         or (retrieved
-                             and candidate["rerank_score"] < RETRIEVED_MIN_RELEVANCE))
+                    and not contradiction_counts(
+                        candidate["nli_probabilities"]["contradiction"], similarity,
+                        candidate["rerank_score"], retrieved)
                 ) or (
                     retrieved and candidate["verdict"] == "SUPPORTED"
                     and candidate["rerank_score"] < RETRIEVED_MIN_SUPPORT_RELEVANCE

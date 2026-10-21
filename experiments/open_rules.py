@@ -12,8 +12,11 @@ SMALL = {"order": "bi", "k": 5, "con": 0.6, "sim_con": 0.5, "rr_con": -99.0,
 
 
 def passage_verdict(r, p):
-    if r["con"] >= p["con"] and r["con"] > max(r["ent"], r["neu"]):
-        if r["sim"] >= p["sim_con"] and r["rr"] >= p["rr_con"]:
+    if r["con"] >= min(p["con"], p.get("con2", 2.0)) and r["con"] > max(r["ent"], r["neu"]):
+        if r["con"] >= p["con"] and r["sim"] >= p["sim_con"] and r["rr"] >= p["rr_con"]:
+            return "CONTRADICTED"
+        if (r["con"] >= p.get("con2", 2.0) and r["sim"] >= p.get("sim2", 0.0)
+                and r["rr"] >= p.get("rr2", 99.0)):
             return "CONTRADICTED"
     elif r["ent"] > max(r["con"], r["neu"]) and r["rr"] >= p["rr_sup"]:
         return "SUPPORTED"
