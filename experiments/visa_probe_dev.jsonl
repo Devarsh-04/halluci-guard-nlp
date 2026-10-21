@@ -1,0 +1,15 @@
+{"question": "Can I work on a student visa?", "claim": "Student visa holders can work up to 60 hours per fortnight while their course is in session.", "gold": "CONTRADICTED"}
+{"question": "How long is a student visa?", "claim": "A student visa lets you stay for up to 6 years in line with your enrolment.", "gold": "SUPPORTED"}
+{"question": "How long is a student visa?", "claim": "A student visa lets you stay for up to 10 years.", "gold": "CONTRADICTED"}
+{"question": "Who can get a working holiday visa?", "claim": "The First Working Holiday visa is for people aged 18 to 30, or 35 for some countries.", "gold": "SUPPORTED"}
+{"question": "Who can get a working holiday visa?", "claim": "The First Working Holiday visa is for people aged 18 to 50.", "gold": "CONTRADICTED"}
+{"question": "How long is a working holiday visa?", "claim": "A First Working Holiday visa lets you stay for 12 months.", "gold": "SUPPORTED"}
+{"question": "Skilled independent visa sponsor?", "claim": "For the Skilled Independent points-tested visa you need an employer sponsor.", "gold": "CONTRADICTED"}
+{"question": "Skilled independent visa age?", "claim": "You must be under 45 to be invited to apply for the Skilled Independent visa.", "gold": "SUPPORTED"}
+{"question": "Temporary graduate visa length?", "claim": "The Post-Vocational Education Work stream lets you stay up to 18 months.", "gold": "SUPPORTED"}
+{"question": "Can I work on a business visitor visa?", "claim": "On a business visitor visa you can work for an Australian employer.", "gold": "CONTRADICTED"}
+{"question": "Student visa health insurance?", "claim": "Student visa holders must have Overseas Student Health Cover.", "gold": "SUPPORTED"}
+{"question": "Visitor visa pets?", "claim": "Visitors can bring pets without any quarantine.", "gold": "INSUFFICIENT_EVIDENCE"}
+{"question": "How long can I stay on a visitor visa?", "claim": "The tourist stream visitor visa lets you stay up to 12 months.", "gold": "SUPPORTED"}
+{"question": "Skilled independent visa?", "claim": "The Skilled Independent visa lets you live and work permanently anywhere in Australia.", "gold": "SUPPORTED"}
+{"question": "Partner visa?", "claim": "The temporary partner visa subclass 820 lets you work in Australia.", "gold": "SUPPORTED"}

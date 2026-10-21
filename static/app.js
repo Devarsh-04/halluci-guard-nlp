@@ -263,11 +263,11 @@
     form.elements.mode.value = mode;
     updateMode();
     $("question").value = "Can I work while studying in Australia on a student visa?";
-    $("answer").value = "Student visa holders can work up to 60 hours per fortnight while their course is in session. They must keep Overseas Student Health Cover for their whole stay.";
+    $("answer").value = "Student visa holders can work up to 60 hours per fortnight while their course is in session. They must have adequate health insurance for their whole stay.";
     if (!searching()) {
       evidenceFields.replaceChildren();
-      addPassage("Student visa holders can work up to 48 hours per fortnight while their course is in session.", "Knowledge base: student visa work rights");
-      addPassage("All student visa holders must maintain Overseas Student Health Cover (OSHC) for the entire duration of their stay in Australia.", "Knowledge base: health cover");
+      addPassage("With this visa you can work up to 48 hours a fortnight when your course of study or training is in session.", "Department of Home Affairs, Student visa (subclass 500)");
+      addPassage("You and your family members must have and maintain adequate health insurance for the whole of your stay in Australia.", "Department of Home Affairs, Student visa (subclass 500)");
     }
     $("status").textContent = "Example loaded: one claim gets the work-hours limit wrong. Verify to see the actual model results.";
     $("question").focus();

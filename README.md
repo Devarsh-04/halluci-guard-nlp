@@ -3,13 +3,13 @@
 [![CI](https://github.com/Devarsh-04/halluci-guard-nlp/actions/workflows/ci.yml/badge.svg)](https://github.com/Devarsh-04/halluci-guard-nlp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Checks an AI's answer to an Australian visa question, claim by claim. It finds the relevant passages in a built-in visa knowledge base (or uses sources you paste) and marks each claim supported, contradicted, not covered, or conflicting, with the passage that decided it.
+Checks an AI's answer to an Australian visa question, claim by claim. It finds the relevant passages on official Department of Home Affairs visa pages (or uses sources you paste) and marks each claim supported, contradicted, not covered, or conflicting, with the passage and page link that decided it.
 
 ![HalluciGuard UI showing one supported and one conflicting claim](docs/screenshot.jpg)
 
-Example: the answer "Student visa holders can work up to 60 hours per fortnight" comes back **contradicted**, with the knowledge-base passage saying the limit is 48 hours; "They must keep Overseas Student Health Cover" comes back **supported**.
+Example: the answer "Student visa holders can work up to 60 hours per fortnight" comes back **contradicted**, with the Home Affairs Student visa page saying the limit is 48 hours a fortnight during the course.
 
-Status: local prototype. The built-in knowledge base is 120 passages written for a university project in 2026; it has not been checked against the Department of Home Affairs and may be out of date. This is not legal or migration advice.
+Status: local prototype. The knowledge base is 1,150 passages from 19 Home Affairs visa pages, retrieved on 22 October 2026. Visa prices are not included, pages change, and nothing here is legal or migration advice.
 
 ## Problem
 
@@ -65,7 +65,7 @@ docker run -p 8000:8000 halluciguard
 
 ## Evidence search
 
-`POST /api/v1/verify-search` takes only `question` and `answer`, finds its own evidence, and verifies against it (`search.py`). By default it searches `data/visa_knowledge_base.jsonl`, the 120 visa passages from the v5 coursework. To search another corpus in the same JSONL format (`doc_id`, `title`, `abstract` as a list of sentences), such as SciFact, set `HALLUCIGUARD_CORPUS`; for a large corpus also set `HALLUCIGUARD_INDEX_CACHE` to a file path so the index is built once and reused.
+`POST /api/v1/verify-search` takes only `question` and `answer`, finds its own evidence, and verifies against it (`search.py`). By default it searches `data/visa_home_affairs.jsonl` (see "Visa knowledge base" below). To search another corpus in the same JSONL format (`doc_id`, `title`, `abstract` as a list of sentences), such as SciFact, set `HALLUCIGUARD_CORPUS`; for a large corpus also set `HALLUCIGUARD_INDEX_CACHE` to a file path so the index is built once and reused.
 
 ```bash
 HALLUCIGUARD_CORPUS=/path/to/corpus.jsonl HALLUCIGUARD_INDEX_CACHE=/path/to/passage_index .venv/bin/uvicorn api:app --port 8000
@@ -78,7 +78,7 @@ Per claim, the loop is:
 3. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with raw NLI probability of 0.9 or more, or if the evidence conflicts.
 4. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 15 passages and is verified against all passages so far. Measured under these rules they do not help (see the table), so leave them off.
 
-Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The visa index (144 passages) builds in about a second on first use. A custom corpus set with `HALLUCIGUARD_CORPUS` is indexed at server startup; for SciFact (about 40,000 passages) that takes a few minutes on CPU unless `HALLUCIGUARD_INDEX_CACHE` points at an existing cache.
+Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The visa index (1,150 passages) builds in a few seconds on first use. A custom corpus set with `HALLUCIGUARD_CORPUS` is indexed at server startup; for SciFact (about 40,000 passages) that takes a few minutes on CPU unless `HALLUCIGUARD_INDEX_CACHE` points at an existing cache.
 
 The rules were chosen on the train split from 15-passage features cached by `experiments/open_features.py` and swept by `experiments/open_rules.py`. On train, accuracy went from 56.2% to 63.9% and false refutes from 132 to 19.
 
@@ -89,7 +89,8 @@ Open-corpus results on the SciFact dev split (300 claims; `python -m experiments
 | Oracle rationale sentences | 64.3% | 0.631 | 41.1% | 56.2% | 4 | 14 | 1 | n/a |
 | Retrieved, rules for supplied evidence (first version) | 55.3% | 0.558 | 37.9% | 67.2% | 6 | 52 | 11 | 0.65 |
 | Retrieved, relevance-gated rules, 15 passages assessed | 60.0% | 0.567 | 46.8% | 34.4% | 13 | 12 | 3 | 2.13 |
-| Retrieved, relevance-gated rules, top 5 assessed, two-tier gate (**current default**) | 60.3% | 0.576 | 46.8% | 37.5% | 13 | 13 | 3 | 0.63 |
+| Retrieved, relevance-gated rules, top 5 assessed, two-tier gate | 60.3% | 0.576 | 46.8% | 37.5% | 13 | 13 | 3 | 0.63 |
+| + same-section conflicts and number check on supports (**current default**) | 60.3% | 0.575 | 46.0% | 37.5% | 12 | 13 | 2 | 0.64 |
 | Retrieved, relevance-gated rules, 15 passages assessed, 2 retries | 59.3% | 0.562 | 48.4% | 34.4% | 18 | 13 | 3 | 7.27 |
 
 The gold document is among the top 5 passages for 85.1% of the 188 labeled dev claims, the top 10 for 91.5% and the top 15 for 95.2%.
@@ -102,6 +103,32 @@ What this shows:
 - Assessing only the top 5 passages brought the time back to 0.63 s per claim, from 2.13 s with 15, at equal or slightly better accuracy and contradicted recall (37.5% against 34.4%, helped by the second route for very confident contradictions). The 2-retry row was measured before that change and is not directly comparable.
 - Retries do not pay for themselves: with 2 retries (measured with 15 passages assessed) the loop averaged 2.32 rounds per claim and took 7.3 s per claim, for slightly lower accuracy (59.3% against 60.0%), no change in contradicted recall and more false supports (18 against 13). Supported recall rose by 1.6 points.
 - Claims with no gold evidence still receive retrieved passages, so abstaining correctly is harder than in the oracle setting.
+
+## Visa knowledge base
+
+`data/build_visa_kb.py` fetches 19 visa pages from immi.homeaffairs.gov.au (student 500; visitor 600 tourist, business and sponsored family streams; ETA 601; eVisitor 651; Working Holiday 417 first, second and third; Temporary Graduate 485 both streams; Skilled Independent 189; Skilled Nominated 190; Skilled Work Regional 491; Partner 820, 801, 309 and 100) and writes `data/visa_home_affairs.jsonl`. Re-run it to refresh the data:
+
+```bash
+python3 data/build_visa_kb.py
+```
+
+- Each page section ("How long you can stay", "Be this age", "With this visa you can"…) becomes one or more passages of up to about 600 characters. Every passage starts with its visa and section, for example "Student visa (subclass 500), How long you can stay: Up to 6 years and in line with your enrolment.", so it still says what it is about when read on its own.
+- Every passage stores its page URL, retrieval date and attribution, and the app shows the URL next to the evidence.
+- Prices are filled in by the website's JavaScript, so they are missing from the page data; sentences with a missing amount are dropped rather than stored as "costs from .".
+- Content: Australian Government Department of Home Affairs, used under [Creative Commons Attribution 3.0 Australia](http://creativecommons.org/licenses/by/3.0/au/deed.en). The Coat of Arms, logos and third-party material are excluded from that licence and are not used. The Department accepts no responsibility for completeness or accuracy and describes its pages as a basic guide to the law.
+
+Search is visa-aware: when the question or a claim names a visa ("student visa", "working holiday", "subclass 189"…), only that visa's pages are searched. In search mode a conflict only counts between passages from the same page section, because two streams of one visa (a 12-month tourist stay and a 3-month business stay) are different rules, not disagreeing sources. A supporting passage must also contain every number in the claim.
+
+Hand-written visa claims (`python -m experiments.visa_probe <file>`):
+
+| Set | Claims | Correct | Notes |
+|---|---:|---:|---|
+| `experiments/visa_probe_dev.jsonl` | 15 | 14 | Written first and used while fixing the rules above, so optimistic |
+| `experiments/visa_probe_heldout.jsonl` | 18 | 15 (83%) | Written afterwards and scored once |
+
+The held-out misses: two true Sponsored Family stream claims came back insufficient evidence, and one true claim ("under 45 when invited for the Skilled Nominated visa") came back contradicted. The probe claims were written by the author from the pages, not by a migration expert, and they are few.
+
+The coursework notes from v5 (`data/visa_knowledge_base.jsonl`, 120 passages) are no longer searched by default: several are out of date (one says a Student visa lasts up to 5 years; the Home Affairs page says 6). Point `HALLUCIGUARD_CORPUS` at them to use them.
 
 ## Evaluation: SciFact
 
@@ -249,7 +276,7 @@ Treat all of this as a smoke test. The pairs are synthetic, written by the v5 au
 
 - Search works over a local SciFact-format corpus only. There is no web search, no LLM and no query rewriting, so the retry loop is a deeper look in one ranking and not reasoning. With retrieved evidence, accuracy falls from 64.3% to 60.3% on SciFact dev.
 - Search mode is precision-first: contradicted recall is 37.5% on dev (56.2% with supplied evidence).
-- Quantitative results are SciFact (scientific text) plus two 40-item hand-written conflict sets and 120 synthetic visa pairs. There is no real visa corpus and no expert-labelled evaluation set.
+- Visa results come from 33 hand-written claims (18 held out) and 120 synthetic coursework pairs. There is no expert-labelled visa evaluation set, and the knowledge base covers 19 visa pages, not every visa, and no prices.
 - NLI contradictions between passages about different conditions still cause some false refutes and false conflicts (see the same-topic conflict set).
 - Confidence is calibrated on SciFact only; the verdict thresholds still use raw probabilities.
 - Latency is from one machine with short passages (1.4 s at the 20-passage API maximum for supplied evidence).
@@ -257,7 +284,7 @@ Treat all of this as a smoke test. The pairs are synthetic, written by the v5 au
 
 ## Next steps
 
-- A real, dated visa corpus from authoritative sources and an expert-labelled evaluation set, before any claim about that domain. This is the biggest gap and needs people and data, not code.
+- An expert-labelled visa evaluation set, and more Home Affairs pages (other visas, visa conditions, prices). The knowledge base now comes from official pages, but the evaluation of it is still small and author-written.
 - Fine-tune the NLI model on in-domain data to cut the contradictions between passages about different conditions; I did not try this because it needs labelled domain data and CPU training time.
 - Move the verdict thresholds onto the calibrated probabilities (not done: it would change behaviour without a measured gain).
 - Recover more contradicted recall in search mode without bringing the false refutes back.

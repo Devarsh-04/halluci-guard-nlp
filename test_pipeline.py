@@ -3,7 +3,7 @@ import pytest
 from pipeline import (
     VerificationInputError, aggregate_verdict, entity_number_score,
     extract_claims, score_verification,
-    calibrated, contradiction_counts, resolve_evidence,
+    calibrated, contradiction_counts, numbers_in, resolve_evidence,
 )
 
 
@@ -258,10 +258,10 @@ def test_claim_confidence_is_set_only_for_committed_verdicts():
     assert resolve_evidence([passage("INSUFFICIENT_EVIDENCE", 0.1, 0.1)])["confidence"] is None
 
 
-def ranked(verdict, strength, rerank_score):
+def ranked(verdict, strength, rerank_score, page="doc"):
     item = passage(verdict, strength if verdict == "SUPPORTED" else 0.0,
                    strength if verdict == "CONTRADICTED" else 0.0)
-    return {**item, "rerank_score": rerank_score}
+    return {**item, "rerank_score": rerank_score, "id": f"{page}-{rerank_score:.0f}:0"}
 
 
 def test_ranked_resolution_lets_the_most_relevant_passage_decide():
@@ -303,3 +303,21 @@ def test_conflict_needs_a_relevant_opposing_passage():
     assert resolve_evidence([relevant, irrelevant])["verdict"] != "CONFLICTING_EVIDENCE"
     irrelevant["rerank_score"] = 6.0
     assert resolve_evidence([relevant, irrelevant])["verdict"] == "CONFLICTING_EVIDENCE"
+
+
+def test_numbers_in_ignores_thousands_separators():
+    assert numbers_in("From AUD1,845.00 for up to 10 years") == {"1845.00", "10"}
+    assert numbers_in("no numbers here") == set()
+
+
+def test_ranked_conflict_needs_the_opposing_passage_on_the_same_page():
+    other_page = resolve_evidence(
+        [ranked("SUPPORTED", 0.995, 9.0, "first-visa"), ranked("CONTRADICTED", 0.995, 6.0, "second-visa")],
+        margin=0.99, ranked=True,
+    )
+    assert other_page["verdict"] == "SUPPORTED"
+    same_page = resolve_evidence(
+        [ranked("SUPPORTED", 0.995, 9.0, "first-visa"), ranked("CONTRADICTED", 0.995, 6.0, "first-visa")],
+        margin=0.99, ranked=True,
+    )
+    assert same_page["verdict"] == "CONFLICTING_EVIDENCE"

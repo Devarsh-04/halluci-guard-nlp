@@ -168,6 +168,10 @@ def aggregate_verdict(claims):
     return "SUPPORTED"
 
 
+def numbers_in(text):
+    return set(re.findall(r"\d+(?:\.\d+)?", text.replace(",", "")))
+
+
 def contradiction_counts(probability, similarity, relevance, retrieved):
     if not retrieved:
         return similarity >= MIN_CONTRADICTION_SIMILARITY
@@ -187,6 +191,12 @@ def calibrated(probabilities, label, temperature=CONFIDENCE_TEMPERATURE):
     return math.exp(logits[label] - top) / sum(math.exp(x - top) for x in logits.values())
 
 
+def source_page(item):
+    """The document a retrieved passage came from: its id without the window
+    suffix (":3") and without a trailing chunk number ("-012")."""
+    return re.sub(r"-\d+$", "", item["id"].rsplit(":", 1)[0])
+
+
 def passage_strength(item):
     label = "entailment" if item["verdict"] == "SUPPORTED" else "contradiction"
     return item["nli_probabilities"][label]
@@ -195,7 +205,7 @@ def passage_strength(item):
 def resolve_evidence(evidence, margin=CONFLICT_MARGIN, ranked=False):
     """With ranked=True the evidence is ordered by relevance: the most relevant
     committed passage leads, and a conflict needs it and a relevant opposing
-    passage to both reach the margin."""
+    passage from the same source page to both reach the margin."""
     supported = [item for item in evidence if item["verdict"] == "SUPPORTED"]
     contradicted = [item for item in evidence if item["verdict"] == "CONTRADICTED"]
     if supported and contradicted:
@@ -204,6 +214,7 @@ def resolve_evidence(evidence, margin=CONFLICT_MARGIN, ranked=False):
             opposing = supported if lead["verdict"] == "CONTRADICTED" else contradicted
             conflict = passage_strength(lead) >= margin and any(
                 passage_strength(i) >= margin and i["rerank_score"] >= RETRIEVED_MIN_RELEVANCE
+                and source_page(i) == source_page(lead)
                 for i in opposing
             )
             if not conflict:
@@ -416,7 +427,8 @@ class VerificationPipeline:
                         candidate["rerank_score"], retrieved)
                 ) or (
                     retrieved and candidate["verdict"] == "SUPPORTED"
-                    and candidate["rerank_score"] < RETRIEVED_MIN_SUPPORT_RELEVANCE
+                    and (candidate["rerank_score"] < RETRIEVED_MIN_SUPPORT_RELEVANCE
+                         or not numbers_in(claim["text"]) <= numbers_in(candidate["text"]))
                 )
                 if irrelevant:
                     candidate.update(

@@ -152,7 +152,7 @@ _pipeline = None
 _index = None
 _load_lock = Lock()
 _static = Path(__file__).parent / "static"
-DEFAULT_CORPUS = Path(__file__).parent / "data" / "visa_knowledge_base.jsonl"
+DEFAULT_CORPUS = [Path(__file__).parent / "data" / "visa_home_affairs.jsonl"]
 app.mount("/static", StaticFiles(directory=_static), name="static")
 
 

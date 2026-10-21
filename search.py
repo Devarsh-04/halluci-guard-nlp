@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -12,11 +13,31 @@ MAX_WINDOW_CHARS = 1200
 NLI_LABEL = {"SUPPORTED": "entailment", "CONTRADICTED": "contradiction"}
 
 
+def source_label(doc, part):
+    label = f"{doc['title']} ({doc['doc_id']}, part {part + 1})"
+    if "publisher" in doc:
+        label = f"{doc['publisher']}: {label}"
+    if "url" in doc:
+        label += f", {doc['url']}, retrieved {doc['retrieved']}"
+    return label
+
+
 class PassageIndex:
     def __init__(self, passages, embeddings, encoder):
         self.passages = passages
         self.embeddings = embeddings
         self.encoder = encoder
+        self.topics = [p.pop("topic", None) for p in passages]
+        self.aliases = {}
+        for p, topic in zip(passages, self.topics):
+            for alias in p.pop("aliases", []):
+                self.aliases.setdefault(alias, set()).add(topic)
+
+    def topics_in(self, text):
+        """Subclasses whose aliases appear in the text; empty when none do."""
+        text = text.lower()
+        return set().union(*(topics for alias, topics in self.aliases.items()
+                             if re.search(rf"\b{re.escape(alias)}\b", text)))
 
     @classmethod
     def build(cls, corpus_path, encoder, cache=None):
@@ -26,9 +47,12 @@ class PassageIndex:
         if cache and cache.with_suffix(".json").exists():
             passages = json.loads(cache.with_suffix(".json").read_text())
             return cls(passages, np.load(cache.with_suffix(".npy")), encoder)
+        paths = [corpus_path] if isinstance(corpus_path, (str, Path)) else corpus_path
         passages = []
-        with open(corpus_path) as f:
-            for line in f:
+        for path in paths:
+            with open(path) as f:
+                lines = f.readlines()
+            for line in lines:
                 doc = json.loads(line)
                 sentences = doc["abstract"]
                 for i in range(max(len(sentences) - 1, 1)):
@@ -36,7 +60,9 @@ class PassageIndex:
                     if len(text) <= MAX_WINDOW_CHARS:
                         passages.append({
                             "id": f"{doc['doc_id']}:{i}", "text": text,
-                            "source": f"{doc['title']} ({doc['doc_id']}, part {i + 1})",
+                            "source": source_label(doc, i),
+                            "topic": doc.get("subclass"),
+                            "aliases": doc.get("aliases", []),
                         })
         embeddings = encoder.encode(
             [p["text"] for p in passages], batch_size=128,
@@ -47,10 +73,12 @@ class PassageIndex:
             np.save(cache.with_suffix(".npy"), embeddings)
         return cls(passages, embeddings, encoder)
 
-    def search(self, query, start, count):
+    def search(self, query, start, count, topics=()):
         vector = self.encoder.encode(query, normalize_embeddings=True)
-        order = np.argsort(-(self.embeddings @ vector))[start:start + count]
-        return [dict(self.passages[i]) for i in order]
+        order = np.argsort(-(self.embeddings @ vector))
+        if topics:
+            order = [i for i in order if self.topics[i] in topics]
+        return [dict(self.passages[i]) for i in order[start:start + count]]
 
 
 def confidence(claim):
@@ -63,11 +91,13 @@ def confidence(claim):
 
 def verify_with_search(pipeline, index, question, answer, max_retries=MAX_RETRIES):
     results = []
+    asked = index.topics_in(question)
     for claim in extract_claims(pipeline.nlp(answer)):
+        topics = index.topics_in(claim["text"]) or asked
         passages = []
         rounds = 0
         for _ in range(max_retries + 1):
-            found = index.search(claim["text"], len(passages), PAGE_SIZE)
+            found = index.search(claim["text"], len(passages), PAGE_SIZE, topics)
             if not found:
                 stopped = "index exhausted"
                 break
