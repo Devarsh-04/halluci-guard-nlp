@@ -6,7 +6,7 @@ import numpy as np
 from pipeline import aggregate_verdict, extract_claims
 
 PAGE_SIZE = 5
-MAX_RETRIES = 2
+MAX_RETRIES = 0
 CONFIDENT = 0.9
 MAX_WINDOW_CHARS = 1200
 NLI_LABEL = {"SUPPORTED": "entailment", "CONTRADICTED": "contradiction"}

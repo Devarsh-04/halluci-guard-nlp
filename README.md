@@ -68,7 +68,7 @@ Per claim, the loop is:
 
 1. Retrieve the 5 best two-sentence windows by MiniLM similarity and verify the claim against them.
 2. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with NLI probability of 0.9 or more, or if the evidence conflicts.
-3. Otherwise fetch the next 5 passages and verify against all passages so far, up to 2 retries (15 passages).
+3. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 5 passages and is verified against all passages so far (up to 15).
 
 Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The first request builds the index (about 40,000 passages for SciFact, a few minutes on CPU) and caches it next to the corpus.
 
@@ -77,15 +77,15 @@ Open-corpus results on the SciFact dev split (300 claims; `tune_scifact.py retri
 | Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Seconds per claim |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Oracle rationale sentences | 55.3% | 0.513 | 33.9% | 32.8% | 5 | 17 | 3 | n/a |
-| Retrieved, 0 retries | 49.3% | 0.484 | 31.5% | 46.9% | 10 | 38 | 6 | 0.30 |
-| Retrieved, 2 retries (default) | 47.7% | 0.478 | 38.7% | 51.6% | 13 | 60 | 7 | 1.17 |
+| Retrieved, 0 retries (default) | 49.3% | 0.484 | 31.5% | 46.9% | 10 | 38 | 6 | 0.30 |
+| Retrieved, 2 retries | 47.7% | 0.478 | 38.7% | 51.6% | 13 | 60 | 7 | 1.17 |
 
 The gold document is among the top 5 passages for 85.1% of the 188 labeled dev claims, the top 10 for 91.5% and the top 15 for 95.2%.
 
 What this shows:
 
 - Retrieval is not the bottleneck. Finding the right document works; the drop from oracle evidence comes from verifying against whole retrieved windows instead of annotated rationales, which adds off-point passages that NLI sometimes reads as contradictions (false refutes 17 to 38).
-- Retries raise recall (supported 31.5% to 38.7%) but add false refutes (38 to 60), because each extra passage is another chance for a spurious contradiction. Overall accuracy goes down slightly. On this benchmark the retry loop does not pay for itself; the default is kept at 2 so the behaviour is visible, and `max_retries=0` is the better setting if accuracy matters more than recall.
+- Retries raise recall (supported 31.5% to 38.7%) but add false refutes (38 to 60), because each extra passage is another chance for a spurious contradiction. Overall accuracy goes down slightly. On this benchmark the retry loop does not pay for itself, so it is off by default; set `max_retries` to 1 or 2 if recall matters more than precision.
 - Claims with no gold evidence still receive retrieved passages, so abstaining correctly is harder than in the oracle setting.
 
 ## Evaluation: SciFact
@@ -160,7 +160,7 @@ Cost grows roughly 37 ms per passage because NLI runs on every claim-passage pai
 | Too many abstentions: correct entailments labelled insufficient | First prototype labelled 88 of 124 supported dev claims insufficient | Removed the combined-score gate and the entity gate on supports | Supported recall 18.5% to 33.9%; still low |
 | False conflicts: one weak opposing passage forces a conflict | 5 false conflicts on dev, 11 on train, for claims with a single gold label | Conflict needs both sides at 0.95 or more | Down to 3 on dev; no gold conflicts exist to measure sensitivity |
 | Wrongly refuting a true claim | 77 train false refutes with raw NLI | Named-entity overlap required for `CONTRADICTED` | Halves false refutes; costs contradicted recall |
-| Agent keeps searching without converging | Mean 2.21 rounds per claim at the 2-retry default | Retry budget of 2 and a 0.9 confidence stop | Bounded, but extra rounds added false refutes |
+| Agent keeps searching without converging | Mean 2.21 rounds per claim with 2 retries | Retry budget (default 0, maximum 2) and a 0.9 confidence stop | Retries are off by default; when enabled they are bounded but add false refutes |
 | Topically similar but non-entailing evidence | Retrieval finds the right document 85% of the time (top 5), yet open-corpus false refutes are 38 against 17 with oracle evidence | Per-passage NLI after ranking, so similarity alone never yields `SUPPORTED` | Partly mitigated: it still produces extra false refutes when retrieved windows are off-point |
 | Passage too long for the NLI model | Inputs over 512 tokens | Request is rejected with a clear error | Caller must shorten passages |
 | Aliases and paraphrased entities | Entity check matches names, not aliases | None | Open |
