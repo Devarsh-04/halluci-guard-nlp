@@ -1,6 +1,11 @@
 # HalluciGuard 2.0
 
+[![CI](https://github.com/Devarsh-04/halluci-guard-nlp/actions/workflows/ci.yml/badge.svg)](https://github.com/Devarsh-04/halluci-guard-nlp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Checks whether each claim in an LLM answer is supported, contradicted, or unaddressed by evidence passages you supply, and returns a per-claim, per-passage verdict with scores.
+
+![HalluciGuard UI showing one supported and one conflicting claim](docs/screenshot.jpg)
 
 Status: local prototype. It verifies against evidence you provide, or against passages it retrieves from a corpus you point it at.
 
