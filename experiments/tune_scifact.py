@@ -1,5 +1,6 @@
 import itertools
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -9,7 +10,7 @@ import numpy as np
 from pipeline import (VerificationPipeline, entity_number_score,
                       named_entities_overlap)
 
-DATA = Path(__file__).resolve().parent.parent / "work" / "scifact"
+DATA = Path(os.environ.get("SCIFACT_DIR", "scifact_data"))
 GOLD = {"SUPPORT": "SUPPORTED", "CONTRADICT": "CONTRADICTED"}
 LABELS = ["SUPPORTED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE"]
 
