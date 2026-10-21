@@ -176,11 +176,11 @@ def get_index():
             status_code=503,
             detail="Evidence search is off: set HALLUCIGUARD_CORPUS to a SciFact-format corpus.jsonl.",
         )
-    pipeline = get_pipeline()
+    encoder = get_pipeline().encoder
     with _load_lock:
         if _index is None:
             _index = PassageIndex.build(
-                corpus, pipeline.encoder, reranker=pipeline.reranker,
+                corpus, encoder,
                 cache=Path(corpus).parent / "passage_index",
             )
     return _index

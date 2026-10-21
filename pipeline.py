@@ -6,8 +6,10 @@ import re
 
 NLI_LABELS = ("contradiction", "entailment", "neutral")
 CONFLICT_MARGIN = 0.95
+CONTRADICTION_THRESHOLD = 0.6
 MIN_CONTRADICTION_SIMILARITY = 0.5
-CONFIDENCE_TEMPERATURE = 2.4
+CONFIDENCE_TEMPERATURE = 2.6
+NLI_MODEL = "cross-encoder/nli-deberta-v3-base"
 
 
 class VerificationInputError(ValueError):
@@ -236,7 +238,7 @@ def score_verification(ner, probabilities, similarity):
     scores = dict(zip(NLI_LABELS, probabilities, strict=True))
     label = max(scores, key=scores.get)
     combined = 0.2 * ner + 0.5 * scores["entailment"] + 0.3 * similarity
-    if label == "contradiction" and scores[label] >= 0.6:
+    if label == "contradiction" and scores[label] >= CONTRADICTION_THRESHOLD:
         verdict = "CONTRADICTED"
     elif label == "entailment":
         verdict = "SUPPORTED"
@@ -265,7 +267,7 @@ def entity_number_score(source_doc, answer_doc):
 
 
 class VerificationPipeline:
-    def __init__(self, nli_model="cross-encoder/nli-deberta-v3-small"):
+    def __init__(self, nli_model=NLI_MODEL):
         import spacy
         import torch
         from sentence_transformers import CrossEncoder, SentenceTransformer

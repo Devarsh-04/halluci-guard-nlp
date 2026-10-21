@@ -8,10 +8,11 @@ from pathlib import Path
 
 import numpy as np
 
-from pipeline import CONFIDENCE_TEMPERATURE, VerificationPipeline, calibrated, entity_number_score
+from pipeline import (CONFIDENCE_TEMPERATURE, NLI_MODEL as DEFAULT_NLI_MODEL,
+                      VerificationPipeline, calibrated, entity_number_score)
 
 DATA = Path(os.environ.get("SCIFACT_DIR", "scifact_data"))
-NLI_MODEL = os.environ.get("NLI_MODEL", "cross-encoder/nli-deberta-v3-small")
+NLI_MODEL = os.environ.get("NLI_MODEL", DEFAULT_NLI_MODEL)
 FEATURES = "" if NLI_MODEL.endswith("small") else "_" + NLI_MODEL.split("/")[-1]
 GOLD = {"SUPPORT": "SUPPORTED", "CONTRADICT": "CONTRADICTED"}
 LABELS = ["SUPPORTED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE"]
