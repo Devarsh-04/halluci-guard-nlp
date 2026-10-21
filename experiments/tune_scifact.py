@@ -220,8 +220,7 @@ def open_retrieval():
         )
         print(f"gold document in top {k} passages: {hits / len(labeled):.1%} of {len(labeled)} labeled claims")
     print("| Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Mean rounds | Seconds/claim |")
-    for reranked, retries in ((False, 0), (True, 0), (True, 2)):
-        index.reranker = pipe.reranker if reranked else None
+    for retries in (0, 2):
         pairs, rounds, start = [], [], time.perf_counter()
         for c in claims:
             gold = GOLD[next(iter(c["evidence"].values()))[0]["label"]] if c["evidence"] else "INSUFFICIENT_EVIDENCE"
@@ -229,7 +228,7 @@ def open_retrieval():
             pairs.append((gold, result["verdict"]))
             rounds.append(sum(x["search"]["rounds"] for x in result["claims"]) / len(result["claims"]))
         s = metrics(pairs)
-        print(f"| Retrieved{', reranked' if reranked else ''}, {retries} retries | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} | {sum(rounds) / len(rounds):.2f} | {(time.perf_counter() - start) / len(claims):.2f} |", flush=True)
+        print(f"| Retrieved, {retries} retries | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} | {sum(rounds) / len(rounds):.2f} | {(time.perf_counter() - start) / len(claims):.2f} |", flush=True)
 
 
 def main():

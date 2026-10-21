@@ -8,6 +8,11 @@ NLI_LABELS = ("contradiction", "entailment", "neutral")
 CONFLICT_MARGIN = 0.95
 CONTRADICTION_THRESHOLD = 0.6
 MIN_CONTRADICTION_SIMILARITY = 0.5
+RETRIEVED_CONTRADICTION_THRESHOLD = 0.95
+RETRIEVED_MIN_SIMILARITY = 0.6
+RETRIEVED_MIN_RELEVANCE = 4.0
+RETRIEVED_MIN_SUPPORT_RELEVANCE = -2.0
+RETRIEVED_CONFLICT_MARGIN = 0.99
 CONFIDENCE_TEMPERATURE = 2.6
 NLI_MODEL = "cross-encoder/nli-deberta-v3-base"
 
@@ -165,19 +170,38 @@ def calibrated(probabilities, label, temperature=CONFIDENCE_TEMPERATURE):
     return math.exp(logits[label] - top) / sum(math.exp(x - top) for x in logits.values())
 
 
-def resolve_evidence(evidence):
+def passage_strength(item):
+    label = "entailment" if item["verdict"] == "SUPPORTED" else "contradiction"
+    return item["nli_probabilities"][label]
+
+
+def resolve_evidence(evidence, margin=CONFLICT_MARGIN, ranked=False):
+    """With ranked=True the evidence is ordered by relevance: the most relevant
+    committed passage leads, and a conflict needs it and a relevant opposing
+    passage to both reach the margin."""
     supported = [item for item in evidence if item["verdict"] == "SUPPORTED"]
     contradicted = [item for item in evidence if item["verdict"] == "CONTRADICTED"]
     if supported and contradicted:
-        support_strength = max(i["nli_probabilities"]["entailment"] for i in supported)
-        contradiction_strength = max(
-            i["nli_probabilities"]["contradiction"] for i in contradicted
-        )
-        if min(support_strength, contradiction_strength) < CONFLICT_MARGIN:
-            if support_strength > contradiction_strength:
-                contradicted = []
-            else:
-                supported = []
+        if ranked:
+            lead = next(i for i in evidence if i["verdict"] in ("SUPPORTED", "CONTRADICTED"))
+            opposing = supported if lead["verdict"] == "CONTRADICTED" else contradicted
+            conflict = passage_strength(lead) >= margin and any(
+                passage_strength(i) >= margin and i["rerank_score"] >= RETRIEVED_MIN_RELEVANCE
+                for i in opposing
+            )
+            if not conflict:
+                if lead["verdict"] == "SUPPORTED":
+                    contradicted = []
+                else:
+                    supported = []
+        else:
+            support_strength = max(passage_strength(i) for i in supported)
+            contradiction_strength = max(passage_strength(i) for i in contradicted)
+            if min(support_strength, contradiction_strength) < margin:
+                if support_strength > contradiction_strength:
+                    contradicted = []
+                else:
+                    supported = []
     inconclusive_count = len(evidence) - len(supported) - len(contradicted)
 
     def passage_count(count):
@@ -234,11 +258,12 @@ def resolve_evidence(evidence):
     }
 
 
-def score_verification(ner, probabilities, similarity):
+def score_verification(ner, probabilities, similarity,
+                       contradiction_threshold=CONTRADICTION_THRESHOLD):
     scores = dict(zip(NLI_LABELS, probabilities, strict=True))
     label = max(scores, key=scores.get)
     combined = 0.2 * ner + 0.5 * scores["entailment"] + 0.3 * similarity
-    if label == "contradiction" and scores[label] >= CONTRADICTION_THRESHOLD:
+    if label == "contradiction" and scores[label] >= contradiction_threshold:
         verdict = "CONTRADICTED"
     elif label == "entailment":
         verdict = "SUPPORTED"
@@ -289,7 +314,7 @@ class VerificationPipeline:
             for label in NLI_LABELS
         ]
 
-    def verify(self, question, answer, evidence):
+    def verify(self, question, answer, evidence, retrieved=False):
         import numpy as np
 
         claims = extract_claims(self.nlp(answer))
@@ -342,7 +367,11 @@ class VerificationPipeline:
                     np.dot(embeddings[evidence_index], claim_embeddings[claim_index]),
                     -1.0, 1.0,
                 ))
-                candidate.update(score_verification(ner, ordered_probs, similarity))
+                candidate.update(score_verification(
+                    ner, ordered_probs, similarity,
+                    RETRIEVED_CONTRADICTION_THRESHOLD if retrieved
+                    else CONTRADICTION_THRESHOLD,
+                ))
                 candidate["explanation"] = {
                     "SUPPORTED": (
                         "This passage supports the claim under the model's checks."
@@ -355,15 +384,29 @@ class VerificationPipeline:
                         "or a clear contradiction."
                     ),
                 }[candidate["verdict"]]
-                if (candidate["verdict"] == "CONTRADICTED"
-                        and similarity < MIN_CONTRADICTION_SIMILARITY):
+                min_similarity = (RETRIEVED_MIN_SIMILARITY if retrieved
+                                  else MIN_CONTRADICTION_SIMILARITY)
+                irrelevant = (
+                    candidate["verdict"] == "CONTRADICTED"
+                    and (similarity < min_similarity
+                         or (retrieved
+                             and candidate["rerank_score"] < RETRIEVED_MIN_RELEVANCE))
+                ) or (
+                    retrieved and candidate["verdict"] == "SUPPORTED"
+                    and candidate["rerank_score"] < RETRIEVED_MIN_SUPPORT_RELEVANCE
+                )
+                if irrelevant:
                     candidate.update(
                         verdict="INSUFFICIENT_EVIDENCE",
                         explanation=(
-                            "This passage is not similar enough to the claim to "
-                            "count as a contradiction."
+                            "This passage is not relevant enough to the claim "
+                            "for its verdict to count."
                         ),
                     )
-            claim.update(**resolve_evidence(candidates), evidence=candidates)
+            claim.update(**resolve_evidence(
+                candidates,
+                RETRIEVED_CONFLICT_MARGIN if retrieved else CONFLICT_MARGIN,
+                ranked=retrieved,
+            ), evidence=candidates)
 
         return {"verdict": aggregate_verdict(claims), "claims": claims}

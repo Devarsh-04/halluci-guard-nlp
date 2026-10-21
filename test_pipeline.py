@@ -256,3 +256,33 @@ def test_claim_confidence_is_set_only_for_committed_verdicts():
     sup = resolve_evidence([strong])
     assert 0.5 < sup["confidence"] < 0.99
     assert resolve_evidence([passage("INSUFFICIENT_EVIDENCE", 0.1, 0.1)])["confidence"] is None
+
+
+def ranked(verdict, strength, rerank_score):
+    item = passage(verdict, strength if verdict == "SUPPORTED" else 0.0,
+                   strength if verdict == "CONTRADICTED" else 0.0)
+    return {**item, "rerank_score": rerank_score}
+
+
+def test_ranked_resolution_lets_the_most_relevant_passage_decide():
+    result = resolve_evidence(
+        [ranked("SUPPORTED", 0.9, 9.0), ranked("CONTRADICTED", 0.99, 5.0)],
+        margin=0.99, ranked=True,
+    )
+    assert result["verdict"] == "SUPPORTED"
+
+
+def test_ranked_resolution_reports_a_confident_relevant_conflict():
+    result = resolve_evidence(
+        [ranked("SUPPORTED", 0.995, 9.0), ranked("CONTRADICTED", 0.995, 5.0)],
+        margin=0.99, ranked=True,
+    )
+    assert result["verdict"] == "CONFLICTING_EVIDENCE"
+
+
+def test_ranked_resolution_ignores_an_opposing_passage_that_is_not_relevant():
+    result = resolve_evidence(
+        [ranked("CONTRADICTED", 0.995, 9.0), ranked("SUPPORTED", 0.995, 1.0)],
+        margin=0.99, ranked=True,
+    )
+    assert result["verdict"] == "CONTRADICTED"
