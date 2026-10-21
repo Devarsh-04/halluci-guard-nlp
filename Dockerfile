@@ -5,7 +5,7 @@ ENV HF_HOME=/opt/hf PIP_NO_CACHE_DIR=1
 COPY requirements-api.txt .
 RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-api.txt
 
-COPY api.py pipeline.py ./
+COPY api.py pipeline.py search.py ./
 COPY static static
 RUN python -c "from pipeline import VerificationPipeline; VerificationPipeline()"
 

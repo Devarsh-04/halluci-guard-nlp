@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Literal
@@ -8,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from pipeline import VerificationInputError, VerificationPipeline
+from search import PassageIndex, verify_with_search
 
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -50,6 +52,13 @@ class VerifyRequest(BaseModel):
         return self
 
 
+class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: Annotated[Text, Field(max_length=1000)]
+    answer: Annotated[Text, Field(max_length=2000)]
+
+
 class RankedEvidence(Evidence):
     retrieval_score: float
     rerank_score: float
@@ -68,6 +77,12 @@ class VerificationScores(BaseModel):
 
 class AssessedEvidence(RankedEvidence, VerificationScores):
     explanation: str
+
+
+class SearchTrace(BaseModel):
+    rounds: int
+    passages_searched: int
+    stopped: str
 
 
 class ClaimResult(VerificationScores):
@@ -89,6 +104,7 @@ class ClaimResult(VerificationScores):
             "all supplied passages are assessed."
         )
     )
+    search: SearchTrace | None = None
 
 
 class VerificationResult(BaseModel):
@@ -115,6 +131,7 @@ app = FastAPI(
     version="0.3.0",
 )
 _pipeline = None
+_index = None
 _load_lock = Lock()
 _static = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_static), name="static")
@@ -133,6 +150,24 @@ def get_pipeline():
     return _pipeline
 
 
+def get_index():
+    global _index
+    corpus = os.environ.get("HALLUCIGUARD_CORPUS")
+    if not corpus:
+        raise HTTPException(
+            status_code=503,
+            detail="Evidence search is off: set HALLUCIGUARD_CORPUS to a SciFact-format corpus.jsonl.",
+        )
+    encoder = get_pipeline().encoder
+    with _load_lock:
+        if _index is None:
+            _index = PassageIndex.build(
+                corpus, encoder,
+                cache=Path(corpus).parent / "passage_index",
+            )
+    return _index
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -145,5 +180,14 @@ def verify(body: VerifyRequest):
             body.question, body.answer,
             [item.model_dump() for item in body.evidence],
         )
+    except VerificationInputError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/api/v1/verify-search", response_model=VerificationResult)
+def verify_search(body: SearchRequest):
+    index = get_index()
+    try:
+        return verify_with_search(get_pipeline(), index, body.question, body.answer)
     except VerificationInputError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

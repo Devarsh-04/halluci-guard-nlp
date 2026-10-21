@@ -85,7 +85,10 @@ def claim_verdict(rows, p):
 
 
 def score(data, p):
-    pairs = [(c["gold"], claim_verdict(c["rows"], p)) for c in data]
+    return metrics([(c["gold"], claim_verdict(c["rows"], p)) for c in data])
+
+
+def metrics(pairs):
     counts = Counter(pairs)
     f1s = []
     for label in LABELS:
@@ -177,7 +180,36 @@ def latency():
         print(f"{n} passages: p50 {times[len(times) // 2]:.0f} ms, p95 {times[int(len(times) * 0.95) - 1]:.0f} ms (30 requests)")
 
 
+def open_retrieval():
+    import time
+    from search import PassageIndex, verify_with_search
+
+    pipe = VerificationPipeline()
+    index = PassageIndex.build(DATA / "corpus.jsonl", pipe.encoder, cache=DATA / "passage_index")
+    claims = read("claims_dev")
+    print(f"{len(index.passages)} indexed passages")
+    labeled = [c for c in claims if c["evidence"]]
+    for k in (5, 10, 15):
+        hits = sum(
+            any(p["id"].split(":")[0] in map(str, c["evidence"]) for p in index.search(c["claim"], 0, k))
+            for c in labeled
+        )
+        print(f"gold document in top {k} passages: {hits / len(labeled):.1%} of {len(labeled)} labeled claims")
+    print("| Evidence | Accuracy | Macro F1 | Supported recall | Contradicted recall | False support | False refute | Conflicts | Mean rounds | Seconds/claim |")
+    for retries in (0, 2):
+        pairs, rounds, start = [], [], time.perf_counter()
+        for c in claims:
+            gold = GOLD[next(iter(c["evidence"].values()))[0]["label"]] if c["evidence"] else "INSUFFICIENT_EVIDENCE"
+            result = verify_with_search(pipe, index, "", c["claim"], max_retries=retries)
+            pairs.append((gold, result["verdict"]))
+            rounds.append(sum(x["search"]["rounds"] for x in result["claims"]) / len(result["claims"]))
+        s = metrics(pairs)
+        print(f"| Retrieved, {retries} retries | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} | {sum(rounds) / len(rounds):.2f} | {(time.perf_counter() - start) / len(claims):.2f} |", flush=True)
+
+
 def main():
+    if sys.argv[1:] == ["retrieval"]:
+        return open_retrieval()
     if sys.argv[1:] == ["calibration"]:
         return calibration()
     if sys.argv[1:] == ["latency"]:
