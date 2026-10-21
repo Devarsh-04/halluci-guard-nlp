@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-api.txt
+      - run: pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-api.txt
+      - run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t halluciguard .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name hg -p 8000:8000 halluciguard
+          until curl -sf localhost:8000/health; do sleep 2; done
+          curl -sf -X POST localhost:8000/api/v1/verify -H 'content-type: application/json' \
+            -d '{"question":"q","answer":"Mars has two moons.","evidence":[{"id":"m","text":"Mars has two moons, Phobos and Deimos."}]}' \
+            | grep -q '"verdict":"SUPPORTED"'
+          docker exec hg id -u | grep -qv '^0$'
