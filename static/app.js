@@ -82,6 +82,9 @@
 
   function showEvidence(evidence, index) {
     $("source-name").textContent = passageName(evidence);
+    const link = $("source-link");
+    link.hidden = !/^https?:\/\//.test(evidence.url || "");
+    link.href = link.hidden ? "" : evidence.url;
     $("source-text").textContent = evidence.text;
     $("evidence-explanation").textContent = evidence.explanation;
     const scores = [

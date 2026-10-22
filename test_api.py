@@ -129,3 +129,13 @@ def test_internal_model_errors_are_not_reported_as_bad_user_input(monkeypatch):
         response = client.post("/api/v1/verify", json=payload())
     assert response.status_code == 500
     assert "configuration" not in response.text
+
+
+def test_evidence_urls_pass_through_and_must_be_web_links(client):
+    body = payload()
+    body["evidence"][0]["url"] = "https://immi.homeaffairs.gov.au/visas"
+    response = client.post("/api/v1/verify", json=body)
+    assert response.status_code == 200
+    assert response.json()["claims"][0]["evidence"][0]["url"] == "https://immi.homeaffairs.gov.au/visas"
+    body["evidence"][0]["url"] = "javascript:alert(1)"
+    assert client.post("/api/v1/verify", json=body).status_code == 422
