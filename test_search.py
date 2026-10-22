@@ -17,7 +17,10 @@ class StubIndex:
         self.size = size
         self.queries = []
 
-    def search(self, query, start, count):
+    def topics_in(self, text):
+        return set()
+
+    def search(self, query, start, count, topics=()):
         self.queries.append((query, start, count))
         return [{"id": f"p{i}", "text": f"passage {i}", "source": "stub"}
                 for i in range(start, min(start + count, self.size))]
@@ -104,14 +107,16 @@ def test_small_index_stops_when_exhausted(nlp):
     }
 
 
-def test_search_endpoint_is_off_without_a_corpus(monkeypatch):
+def test_search_uses_the_visa_knowledge_base_by_default(monkeypatch):
+    built = []
     monkeypatch.delenv("HALLUCIGUARD_CORPUS", raising=False)
-    with TestClient(api.app) as client:
-        response = client.post(
-            "/api/v1/verify-search", json={"question": "q", "answer": "Mars has two moons."}
-        )
-    assert response.status_code == 503
-    assert "HALLUCIGUARD_CORPUS" in response.json()["detail"]
+    monkeypatch.setattr(api, "_index", None)
+    monkeypatch.setattr(api, "get_pipeline", lambda: type("P", (), {"encoder": None})())
+    monkeypatch.setattr(api.PassageIndex, "build",
+                        lambda corpus, encoder, cache=None: built.append(corpus) or "index")
+    assert api.get_index() == "index"
+    assert built == [api.DEFAULT_CORPUS]
+    assert all(path.exists() for path in api.DEFAULT_CORPUS)
 
 
 def test_search_endpoint_returns_trace(monkeypatch):
@@ -173,7 +178,7 @@ def test_index_builds_two_sentence_windows(corpus):
     index = PassageIndex.build(corpus, WordEncoder())
     assert [p["id"] for p in index.passages] == ["1:0", "1:1", "2:0"]
     assert index.passages[0]["text"] == "Mars has two moons. They are Phobos and Deimos."
-    assert index.passages[2]["source"] == "SciFact document 2: Jupiter"
+    assert index.passages[2]["source"] == "Jupiter (2, part 1)"
 
 
 def test_index_search_ranks_and_pages(corpus):
@@ -200,3 +205,37 @@ def test_server_builds_the_index_at_startup(monkeypatch):
     monkeypatch.setattr(api, "get_index", lambda: built.append(True))
     with TestClient(api.app):
         assert built == [True]
+
+
+def test_official_passages_carry_publisher_url_and_date(tmp_path):
+    import json
+
+    path = tmp_path / "official.jsonl"
+    path.write_text(json.dumps({
+        "doc_id": "ha-1", "title": "Student visa (subclass 500): Stay",
+        "abstract": ["Up to 6 years and in line with your enrolment."],
+        "publisher": "Department of Home Affairs", "url": "https://example.gov.au/500",
+        "retrieved": "2026-10-22",
+    }) + "\n")
+    index = PassageIndex.build([path], WordEncoder())
+    assert index.passages[0]["source"] == (
+        "Department of Home Affairs: Student visa (subclass 500): Stay (ha-1, part 1), "
+        "https://example.gov.au/500, retrieved 2026-10-22"
+    )
+
+
+def test_search_is_limited_to_the_visa_the_question_names(tmp_path):
+    import json
+
+    path = tmp_path / "kb.jsonl"
+    path.write_text("".join(json.dumps(doc) + "\n" for doc in [
+        {"doc_id": "a", "title": "Student", "abstract": ["Mars moons for students."],
+         "subclass": "500", "aliases": ["student visa"]},
+        {"doc_id": "b", "title": "Visitor", "abstract": ["Mars moons for visitors."],
+         "subclass": "600", "aliases": ["visitor visa"]},
+    ]))
+    index = PassageIndex.build(path, WordEncoder())
+    assert index.topics_in("Can I work on a Student Visa?") == {"500"}
+    assert index.topics_in("Mars moons") == set()
+    assert [p["id"] for p in index.search("Mars moons", 0, 5, {"600"})] == ["b:0"]
+    assert "topic" not in index.passages[0] and "aliases" not in index.passages[0]

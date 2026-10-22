@@ -128,3 +128,8 @@ footer { display: flex; justify-content: space-between; gap: 15px; padding: 22px
 @media (max-width: 950px) { main { padding-inline: 24px; } .workspace { grid-template-columns: minmax(290px, 1fr) minmax(0, 1.15fr); } .input-pane, .result-pane { padding: 24px; } .page-heading { align-items: flex-start; } .page-heading p { max-width: 43ch; } }
 @media (max-width: 720px) { .masthead { height: 74px; padding-inline: 20px; } .brand { font-size: 20px; gap: 8px; } .masthead nav { gap: 14px; } .local-label { display: none; } main { padding: 28px 16px 0; } .page-heading { flex-direction: column; gap: 18px; margin-bottom: 24px; } h1 { font-size: 32px; } .page-heading p { font-size: 14px; } .workspace { grid-template-columns: 1fr; } .input-pane { border-right: 0; border-bottom: 1px solid var(--line); } .input-pane, .result-pane { padding: 22px; } .empty-state { padding: 45px 0; } .result-summary { flex-wrap: wrap; gap: 10px; } #counts { text-align: left; max-width: none; } footer { padding-inline: 20px; flex-wrap: wrap; } .text-button, .add-button { min-height: 40px; } }
 @media (prefers-reduced-motion: no-preference) { .button { transition: background-color 150ms ease-out; } }
+.mode-switch { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 8px; }
+.mode-switch label { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.mode-switch input { width: auto; margin: 0; }
+.kb-note { margin: 0 0 18px; }
+.own-evidence { border: 0; margin: 0; padding: 0; min-width: 0; }

@@ -1,0 +1,18 @@
+{"question": "How long is the Temporary Graduate visa?", "claim": "The Post-Higher Education Work stream usually lets you stay between 2 and 3 years.", "gold": "SUPPORTED"}
+{"question": "Second working holiday visa requirements?", "claim": "For a second Working Holiday visa you must have completed 3 months of specified work.", "gold": "SUPPORTED"}
+{"question": "Second working holiday visa requirements?", "claim": "For a second Working Holiday visa you must have completed 9 months of specified work.", "gold": "CONTRADICTED"}
+{"question": "Third working holiday visa requirements?", "claim": "For a third Working Holiday visa you must have completed 6 months of specified work.", "gold": "SUPPORTED"}
+{"question": "How long can business visitors stay?", "claim": "The Business Visitor stream lets you stay up to 3 months.", "gold": "SUPPORTED"}
+{"question": "How long can business visitors stay?", "claim": "The Business Visitor stream lets you stay up to 5 years.", "gold": "CONTRADICTED"}
+{"question": "Who can be sponsored on the sponsored family visitor visa?", "claim": "On the Sponsored Family stream you must be sponsored by an eligible family member who is an Australian citizen or permanent resident.", "gold": "SUPPORTED"}
+{"question": "Sponsored family visitor visa bond?", "claim": "On the Sponsored Family stream your sponsor might be asked to pay a security bond.", "gold": "SUPPORTED"}
+{"question": "Where do I apply for the tourist visa from overseas?", "claim": "For the Tourist stream (apply outside Australia) you must be outside Australia when you apply.", "gold": "SUPPORTED"}
+{"question": "Temporary Graduate visa age limit?", "claim": "You must be aged 35 years or under to apply for the Temporary Graduate visa.", "gold": "SUPPORTED"}
+{"question": "Temporary Graduate visa age limit?", "claim": "You must be aged 55 years or under to apply for the Temporary Graduate visa.", "gold": "CONTRADICTED"}
+{"question": "Student visa requirements?", "claim": "Student visa applicants must be a genuine student.", "gold": "SUPPORTED"}
+{"question": "Working holiday visa and children?", "claim": "Working Holiday visa holders can be accompanied by their dependent children.", "gold": "CONTRADICTED"}
+{"question": "Student visa perks?", "claim": "Student visa holders get free public transport in every Australian city.", "gold": "INSUFFICIENT_EVIDENCE"}
+{"question": "Where do I apply for the onshore partner visa?", "claim": "Applicants for the temporary Partner visa subclass 820 must apply in Australia.", "gold": "SUPPORTED"}
+{"question": "Skilled Nominated visa age?", "claim": "You must be aged under 45 when you are invited to apply for the Skilled Nominated visa.", "gold": "SUPPORTED"}
+{"question": "Skilled Nominated visa age?", "claim": "You must be aged under 25 when you are invited to apply for the Skilled Nominated visa.", "gold": "CONTRADICTED"}
+{"question": "Visitor visa and work?", "claim": "Visitor visa holders receive a free Medicare card on arrival.", "gold": "INSUFFICIENT_EVIDENCE"}

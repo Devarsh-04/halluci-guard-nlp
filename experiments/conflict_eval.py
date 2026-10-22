@@ -8,8 +8,8 @@ from pipeline import VerificationPipeline, resolve_evidence
 LABELS = ["SUPPORTED", "CONTRADICTED", "CONFLICTING_EVIDENCE", "INSUFFICIENT_EVIDENCE"]
 
 
-def main():
-    items = [json.loads(line) for line in open(Path(__file__).with_name("conflict_set.jsonl"))]
+def main(name="conflict_set"):
+    items = [json.loads(line) for line in open(Path(__file__).with_name(f"{name}.jsonl"))]
     pipe = VerificationPipeline()
     assessed = []
     for item in items:
@@ -27,7 +27,13 @@ def main():
         print(f"| {margin} | {sum(g == q for g, q in pairs) / len(pairs):.1%} | {tp}/{predicted} | {tp}/{gold} | {recall('SUPPORTED'):.0%} | {recall('CONTRADICTED'):.0%} |")
         if margin == 0.95:
             print("confusion at 0.95 (gold -> predicted):", dict(counts))
+            for item, ev in zip(items, assessed):
+                got = resolve_evidence(ev)["verdict"]
+                if got != item["gold"]:
+                    print("  miss:", item["gold"][:4], "->", got[:4], "|", item["claim"])
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(*sys.argv[1:])

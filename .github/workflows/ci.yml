@@ -29,4 +29,7 @@ jobs:
           curl -sf -X POST localhost:8000/api/v1/verify -H 'content-type: application/json' \
             -d '{"question":"q","answer":"Mars has two moons.","evidence":[{"id":"m","text":"Mars has two moons, Phobos and Deimos."}]}' \
             | grep -q '"verdict":"SUPPORTED"'
+          curl -sf -X POST localhost:8000/api/v1/verify-search -H 'content-type: application/json' \
+            -d '{"question":"Can students work?","answer":"Student visa holders can work up to 60 hours per fortnight while their course is in session."}' \
+            | grep -q '"verdict":"CONTRADICTED"'
           docker exec hg id -u | grep -qv '^0$'

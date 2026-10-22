@@ -83,7 +83,8 @@ def extract(split, pipe, corpus):
 
 def passage_verdict(r, p):
     if (r["con"] >= p["con"] and r["con"] > max(r["ent"], 1 - r["con"] - r["ent"])
-            and (r["overlap"] or not p["gate_con"]) and r["sim"] >= p.get("sim_con", 0.0)):
+            and (r["overlap"] or not p["gate_con"]) and r["sim"] >= p.get("sim_con", 0.0)
+            and r.get("rr", 99.0) >= p.get("rr_con", -99.0)):
         return "CONTRADICTED"
     combined = 0.2 * r["ner"] + 0.5 * r["ent"] + 0.3 * r["sim"]
     if (r["ent"] >= p["ent"] and r["ent"] > max(r["con"], 1 - r["con"] - r["ent"])
@@ -97,7 +98,10 @@ def claim_verdict(rows, p):
     sup = [r["ent"] for v, r in verdicts if v == "SUPPORTED"]
     con = [r["con"] for v, r in verdicts if v == "CONTRADICTED"]
     if sup and con:
-        if min(max(sup), max(con)) >= p["margin"]:
+        relevant = lambda r: r.get("rr", 99.0) >= p.get("rr_conf", -99.0)
+        sup_rel = [r["ent"] for v, r in verdicts if v == "SUPPORTED" and relevant(r)]
+        con_rel = [r["con"] for v, r in verdicts if v == "CONTRADICTED" and relevant(r)]
+        if sup_rel and con_rel and min(max(sup_rel), max(con_rel)) >= p["margin"]:
             return "CONFLICTING_EVIDENCE"
         return "SUPPORTED" if max(sup) > max(con) else "CONTRADICTED"
     return "SUPPORTED" if sup else "CONTRADICTED" if con else "INSUFFICIENT_EVIDENCE"
@@ -139,7 +143,8 @@ ABLATION = {
     "+ conflict margin 0.95": dict(gate_sup=False, gate_con=False, ent=0.0, comb=0.0, con=0.0, margin=0.95),
     "+ contradiction >= 0.6": dict(gate_sup=False, gate_con=False, ent=0.0, comb=0.0, con=0.6, margin=0.95),
     "+ entity gate on refutes": dict(gate_sup=False, gate_con=True, ent=0.0, comb=0.0, con=0.6, margin=0.95),
-    "+ similarity >= 0.5 instead of entity gate (current)": dict(gate_sup=False, gate_con=False, sim_con=0.5, ent=0.0, comb=0.0, con=0.6, margin=0.95),
+    "+ similarity >= 0.5 instead of entity gate": dict(gate_sup=False, gate_con=False, sim_con=0.5, ent=0.0, comb=0.0, con=0.6, margin=0.95),
+    "+ conflict needs a relevant opposing passage (**current**)": dict(gate_sup=False, gate_con=False, sim_con=0.5, ent=0.0, comb=0.0, con=0.6, margin=0.95, rr_conf=4.0),
     "+ entity gate on supports": dict(gate_sup=True, gate_con=True, ent=0.0, comb=0.0, con=0.6, margin=0.95),
     "+ entailment >= 0.6 and combined >= 0.6 (previous)": dict(gate_sup=True, gate_con=True, ent=0.6, comb=0.6, con=0.6, margin=0.0),
 }
@@ -155,7 +160,7 @@ def ablation():
             print(f"| {name} | {split} | {s['acc']:.1%} | {s['macro_f1']:.3f} | {s['recall'][0]:.1%} | {s['recall'][1]:.1%} | {s['false_support']} | {s['false_refute']} | {s['conflicts']} |")
 
 
-FINAL = ABLATION["+ similarity >= 0.5 instead of entity gate (current)"]
+FINAL = ABLATION["+ conflict needs a relevant opposing passage (**current**)"]
 
 
 def calibration():
