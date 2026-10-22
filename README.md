@@ -5,13 +5,13 @@
 
 Checks an AI's answer to an Australian visa question, claim by claim. It finds the relevant passages on official Department of Home Affairs visa pages (or uses sources you paste) and marks each claim supported, contradicted, not covered, or conflicting, with the passage and page link that decided it.
 
-![HalluciGuard checking an answer about the Student visa: the claim that students can work 60 hours a fortnight is contradicted by the Home Affairs Student visa page, which says 48 hours, and the health insurance claim is supported](docs/screenshot.jpg)
+![Animated demo: HalluciGuard loads a Student visa example, verifies it, marks the 60-hours work claim contradicted by the Home Affairs page that says 48 hours, and marks the health insurance claim supported](docs/demo.gif)
 
-*Checking an AI answer about the Student visa. The work-hours claim is contradicted by the official page (48 hours a fortnight, not 60); the health insurance claim is supported. Each passage links to the Home Affairs page it came from.*
+*Checking an AI answer about the Student visa. The work-hours claim is contradicted by the official page (48 hours a fortnight, not 60); the health insurance claim is supported. Each passage links to the Home Affairs page it came from. [Full-page screenshot](docs/screenshot.jpg).*
 
 Example: the answer "Student visa holders can work up to 60 hours per fortnight" comes back **contradicted**, with the Home Affairs Student visa page saying the limit is 48 hours a fortnight during the course.
 
-Status: local prototype. The knowledge base is 1,150 passages from 19 Home Affairs visa pages, retrieved on 22 October 2026. Visa prices are not included, pages change, and nothing here is legal or migration advice.
+Status: local prototype. The knowledge base is 2,003 passages from 32 Home Affairs visa pages, retrieved on 22 October 2026. Visa prices are not included, pages change, and nothing here is legal or migration advice.
 
 ## Problem
 
@@ -80,7 +80,7 @@ Per claim, the loop is:
 3. Stop if the verdict is `SUPPORTED` or `CONTRADICTED` with raw NLI probability of 0.9 or more, or if the evidence conflicts.
 4. Retries are off by default. With `max_retries` set to 1 or 2 in the request, an unconvinced claim fetches the next 15 passages and is verified against all passages so far. Measured under these rules they do not help (see the table), so leave them off.
 
-Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The visa index (1,150 passages) builds in a few seconds on first use. A custom corpus set with `HALLUCIGUARD_CORPUS` is indexed at server startup; for SciFact (about 40,000 passages) that takes a few minutes on CPU unless `HALLUCIGUARD_INDEX_CACHE` points at an existing cache.
+Each claim in the response carries a `search` trace: rounds used, passages searched, and why it stopped. There is no LLM and no query rewriting; a retry only looks deeper in the same ranking. The visa index (2,003 passages) builds in a few seconds on first use. A custom corpus set with `HALLUCIGUARD_CORPUS` is indexed at server startup; for SciFact (about 40,000 passages) that takes a few minutes on CPU unless `HALLUCIGUARD_INDEX_CACHE` points at an existing cache.
 
 The rules were chosen on the train split from 15-passage features cached by `experiments/open_features.py` and swept by `experiments/open_rules.py`. On train, accuracy went from 56.2% to 63.9% and false refutes from 132 to 19.
 
@@ -108,7 +108,7 @@ What this shows:
 
 ## Visa knowledge base
 
-`data/build_visa_kb.py` fetches 19 visa pages from immi.homeaffairs.gov.au (student 500; visitor 600 tourist, business and sponsored family streams; ETA 601; eVisitor 651; Working Holiday 417 first, second and third; Temporary Graduate 485 both streams; Skilled Independent 189; Skilled Nominated 190; Skilled Work Regional 491; Partner 820, 801, 309 and 100) and writes `data/visa_home_affairs.jsonl`. Re-run it to refresh the data:
+`data/build_visa_kb.py` fetches 32 visa pages from immi.homeaffairs.gov.au (student 500; visitor 600 tourist, business and sponsored family streams; ETA 601; eVisitor 651; Working Holiday 417 first, second and third; Work and Holiday 462; Temporary Graduate 485 both streams; Skilled Independent 189; Skilled Nominated 190; Skilled Work Regional 491; Skills in Demand 482 Core Skills and Specialist Skills streams; Employer Nomination Scheme 186 both streams; Skilled Employer Sponsored Regional 494; Partner 820, 801, 309 and 100; Prospective Marriage 300; Parent 103, Contributory Parent 143, Aged Parent 804 and Sponsored Parent 870; Transit 771; Medical Treatment 602) and writes `data/visa_home_affairs.jsonl`. Re-run it to refresh the data:
 
 ```bash
 python3 data/build_visa_kb.py
@@ -278,7 +278,7 @@ Treat all of this as a smoke test. The pairs are synthetic, written by the v5 au
 
 - Search works over a local SciFact-format corpus only. There is no web search, no LLM and no query rewriting, so the retry loop is a deeper look in one ranking and not reasoning. With retrieved evidence, accuracy falls from 64.3% to 60.3% on SciFact dev.
 - Search mode is precision-first: contradicted recall is 37.5% on dev (56.2% with supplied evidence).
-- Visa results come from 33 hand-written claims (18 held out) and 120 synthetic coursework pairs. There is no expert-labelled visa evaluation set, and the knowledge base covers 19 visa pages, not every visa, and no prices.
+- Visa results come from 33 hand-written claims (18 held out) and 120 synthetic coursework pairs. There is no expert-labelled visa evaluation set, and the knowledge base covers 32 visa pages, not every visa, and no prices.
 - NLI contradictions between passages about different conditions still cause some false refutes and false conflicts (see the same-topic conflict set).
 - Confidence is calibrated on SciFact only; the verdict thresholds still use raw probabilities.
 - Latency is from one machine with short passages (1.4 s at the 20-passage API maximum for supplied evidence).

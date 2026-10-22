@@ -34,6 +34,19 @@ PAGES = {
     "partner-onshore/permanent-801": "Partner visa (permanent, subclass 801)",
     "partner-offshore/provisional-309": "Partner visa (provisional, subclass 309)",
     "partner-offshore/migrant-100": "Partner visa (migrant, subclass 100)",
+    "work-holiday-462/first-work-holiday-462": "Work and Holiday visa (subclass 462), first Work and Holiday visa",
+    "skills-in-demand-visa-subclass-482/core-skills-stream": "Skills in Demand visa (subclass 482), Core Skills stream",
+    "skills-in-demand-visa-subclass-482/specialist-skills-stream": "Skills in Demand visa (subclass 482), Specialist Skills stream",
+    "employer-nomination-scheme-186/temporary-residence-transition-stream": "Employer Nomination Scheme visa (subclass 186), Temporary Residence Transition stream",
+    "employer-nomination-scheme-186/direct-entry-stream": "Employer Nomination Scheme visa (subclass 186), Direct Entry stream",
+    "skilled-employer-sponsored-regional-494/employer-sponsored-stream": "Skilled Employer Sponsored Regional (Provisional) visa (subclass 494), Employer Sponsored stream",
+    "prospective-marriage-300": "Prospective Marriage visa (subclass 300)",
+    "parent-103": "Parent visa (subclass 103)",
+    "contributory-parent-143": "Contributory Parent visa (subclass 143)",
+    "aged-parent-804": "Aged Parent visa (subclass 804)",
+    "sponsored-parent-temporary-870": "Sponsored Parent (Temporary) visa (subclass 870)",
+    "transit-771": "Transit visa (subclass 771)",
+    "medical-treatment-602": "Medical Treatment visa (subclass 602)",
 }
 # Phrases that identify each subclass in a question or answer.
 ALIASES = {
@@ -41,7 +54,8 @@ ALIASES = {
     "600": ["visitor visa", "tourist visa", "business visitor", "sponsored family", "subclass 600"],
     "601": ["electronic travel authority", "eta", "subclass 601"],
     "651": ["evisitor", "subclass 651"],
-    "417": ["working holiday", "work and holiday", "subclass 417"],
+    "417": ["working holiday", "subclass 417"],
+    "462": ["working holiday", "work and holiday", "subclass 462"],
     "485": ["temporary graduate", "post-higher education", "post-vocational", "graduate visa", "subclass 485"],
     "189": ["skilled independent", "subclass 189"],
     "190": ["skilled nominated", "subclass 190"],
@@ -50,6 +64,16 @@ ALIASES = {
     "801": ["partner visa", "subclass 801"],
     "309": ["partner visa", "subclass 309"],
     "100": ["partner visa", "subclass 100"],
+    "482": ["skills in demand", "temporary skill shortage", "tss visa", "work visa", "subclass 482"],
+    "186": ["employer nomination", "ens visa", "subclass 186"],
+    "494": ["skilled employer sponsored regional", "subclass 494"],
+    "300": ["prospective marriage", "fiance visa", "fiancé visa", "subclass 300"],
+    "103": ["parent visa", "subclass 103"],
+    "143": ["contributory parent", "parent visa", "subclass 143"],
+    "804": ["aged parent", "parent visa", "subclass 804"],
+    "870": ["sponsored parent", "parent visa", "subclass 870"],
+    "771": ["transit visa", "subclass 771"],
+    "602": ["medical treatment", "subclass 602"],
 }
 ATTRIBUTION = "Australian Government Department of Home Affairs, CC BY 3.0 AU"
 SECTIONS = {
