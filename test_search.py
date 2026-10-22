@@ -219,9 +219,9 @@ def test_official_passages_carry_publisher_url_and_date(tmp_path):
     }) + "\n")
     index = PassageIndex.build([path], WordEncoder())
     assert index.passages[0]["source"] == (
-        "Department of Home Affairs: Student visa (subclass 500): Stay (ha-1, part 1), "
-        "https://example.gov.au/500, retrieved 2026-10-22"
+        "Department of Home Affairs: Student visa (subclass 500): Stay, retrieved 2026-10-22"
     )
+    assert index.passages[0]["url"] == "https://example.gov.au/500"
 
 
 def test_search_is_limited_to_the_visa_the_question_names(tmp_path):

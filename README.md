@@ -5,7 +5,9 @@
 
 Checks an AI's answer to an Australian visa question, claim by claim. It finds the relevant passages on official Department of Home Affairs visa pages (or uses sources you paste) and marks each claim supported, contradicted, not covered, or conflicting, with the passage and page link that decided it.
 
-![HalluciGuard UI showing one supported and one conflicting claim](docs/screenshot.jpg)
+![HalluciGuard checking an answer about the Student visa: the claim that students can work 60 hours a fortnight is contradicted by the Home Affairs Student visa page, which says 48 hours, and the health insurance claim is supported](docs/screenshot.jpg)
+
+*Checking an AI answer about the Student visa. The work-hours claim is contradicted by the official page (48 hours a fortnight, not 60); the health insurance claim is supported. Each passage links to the Home Affairs page it came from.*
 
 Example: the answer "Student visa holders can work up to 60 hours per fortnight" comes back **contradicted**, with the Home Affairs Student visa page saying the limit is 48 hours a fortnight during the course.
 
@@ -48,7 +50,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-api.txt
 .venv/bin/uvicorn api:app --port 8000
 ```
 
-Open http://127.0.0.1:8000 for the UI. By default it searches the visa knowledge base, so you only enter a question and the AI's answer; switch to "Use my own sources" to paste passages instead. The API has `POST /api/v1/verify-search` (question and answer) and `POST /api/v1/verify` (question, answer and your passages); the schema is at `/docs` and `GET /health` checks the server.
+Open http://127.0.0.1:8000 for the UI. By default it searches the visa knowledge base, so you only enter a question and the AI's answer; switch to "Use my own sources" to paste passages instead. The API has `POST /api/v1/verify-search` (question and answer) and `POST /api/v1/verify` (question, answer and your passages, each with an optional `source` name and `url`); every assessed passage comes back with its `url` when it has one. The schema is at `/docs` and `GET /health` checks the server.
 
 ```bash
 HALLUCIGUARD_RUN_MODEL_TESTS=1 .venv/bin/pytest -q

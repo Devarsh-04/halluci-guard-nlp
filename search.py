@@ -14,11 +14,11 @@ NLI_LABEL = {"SUPPORTED": "entailment", "CONTRADICTED": "contradiction"}
 
 
 def source_label(doc, part):
+    if "url" in doc:
+        return f"{doc['publisher']}: {doc['title'].rstrip('. ')}, retrieved {doc['retrieved']}"
     label = f"{doc['title']} ({doc['doc_id']}, part {part + 1})"
     if "publisher" in doc:
         label = f"{doc['publisher']}: {label}"
-    if "url" in doc:
-        label += f", {doc['url']}, retrieved {doc['retrieved']}"
     return label
 
 
@@ -61,6 +61,7 @@ class PassageIndex:
                         passages.append({
                             "id": f"{doc['doc_id']}:{i}", "text": text,
                             "source": source_label(doc, i),
+                            **({"url": doc["url"]} if "url" in doc else {}),
                             "topic": doc.get("subclass"),
                             "aliases": doc.get("aliases", []),
                         })

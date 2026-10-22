@@ -22,6 +22,7 @@ class Evidence(BaseModel):
     id: Annotated[Text, Field(max_length=100)]
     text: Annotated[Text, Field(max_length=4000)]
     source: Annotated[Text, Field(max_length=2000)] | None = None
+    url: Annotated[Text, Field(max_length=2000, pattern=r"^https?://")] | None = None
 
 
 class VerifyRequest(BaseModel):
