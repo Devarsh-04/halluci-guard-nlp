@@ -5,9 +5,9 @@
 
 Checks an AI's answer to an Australian visa question, claim by claim. It finds the relevant passages on official Department of Home Affairs visa pages (or uses sources you paste) and marks each claim supported, contradicted, not covered, or conflicting, with the passage and page link that decided it.
 
-![HalluciGuard checking an answer about the Student visa: the claim that students can work 60 hours a fortnight is contradicted by the Home Affairs Student visa page, which says 48 hours, and the health insurance claim is supported](docs/screenshot.jpg)
+![Animated demo: HalluciGuard loads a Student visa example, verifies it, marks the 60-hours work claim contradicted by the Home Affairs page that says 48 hours, and marks the health insurance claim supported](docs/demo.gif)
 
-*Checking an AI answer about the Student visa. The work-hours claim is contradicted by the official page (48 hours a fortnight, not 60); the health insurance claim is supported. Each passage links to the Home Affairs page it came from.*
+*Checking an AI answer about the Student visa. The work-hours claim is contradicted by the official page (48 hours a fortnight, not 60); the health insurance claim is supported. Each passage links to the Home Affairs page it came from. [Full-page screenshot](docs/screenshot.jpg).*
 
 Example: the answer "Student visa holders can work up to 60 hours per fortnight" comes back **contradicted**, with the Home Affairs Student visa page saying the limit is 48 hours a fortnight during the course.
 
